@@ -1,0 +1,12 @@
+var R=require("../../../../../../../chunks/[turbopack]_runtime.js")("server/app/api/clients/[id]/gbp/[gbpId]/verification/route.js")
+R.c("server/chunks/[root-of-the-server]__12dwhka._.js")
+R.c("server/chunks/[root-of-the-server]__039xus9._.js")
+R.c("server/chunks/node_modules_zod_v4_classic_external_1-pw2v2.js")
+R.c("server/chunks/_06obp98._.js")
+R.c("server/chunks/[root-of-the-server]__05-hz6g._.js")
+R.c("server/chunks/node_modules_06ax3_r._.js")
+R.c("server/chunks/[root-of-the-server]__0pb_nft._.js")
+R.c("server/chunks/[root-of-the-server]__1s19urb._.js")
+R.c("server/chunks/1no0_server_app_api_clients_[id]_gbp_[gbpId]_verification_route_actions_1gb6ljs.js")
+R.m(114778)
+module.exports=R.m(114778).exports

@@ -1,0 +1,23 @@
+{
+  "name": "worker",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "echo \"No worker tests yet\""
+  },
+  "dependencies": {
+    "@rankforge/database": "*",
+    "@rankforge/queue": "*",
+    "@sentry/node": "^8.0.0",
+    "resend": "^6.17.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "ts-node": "^10",
+    "typescript": "^5"
+  }
+}

@@ -1,0 +1,25 @@
+# Components
+
+- **TwoFactorSetupPage** [client] — `apps\web\src\app\2fa-setup\page.tsx`
+- **RootLayout** — `apps\web\src\app\layout.tsx`
+- **LoginPage** [client] — `apps\web\src\app\login\page.tsx`
+- **Home** [client] — `apps\web\src\app\page.tsx`
+- **ApprovalsView** [client] — `apps\web\src\components\approvals\approvals-view.tsx`
+- **BuildStatusView** [client] — `apps\web\src\components\build-status\build-status-view.tsx`
+- **ClientDetailPanel** [client] — props: clientId, onClose — `apps\web\src\components\clients\client-detail-panel.tsx`
+- **ClientsView** [client] — `apps\web\src\components\clients\clients-view.tsx`
+- **CommandPalette** [client] — `apps\web\src\components\command-palette\command-palette.tsx`
+- **DashboardView** [client] — `apps\web\src\components\dashboard\dashboard-view.tsx`
+- **GbpFaqManager** [client] — props: clientId, gbpId — `apps\web\src\components\gbp\gbp-faq-manager.tsx`
+- **GbpIntakeForm** [client] — props: clientId, gbpId, initialData — `apps\web\src\components\gbp\gbp-intake-form.tsx`
+- **GbpPhotosManager** [client] — props: clientId, gbpId — `apps\web\src\components\gbp\gbp-photos-manager.tsx`
+- **GbpPostsManager** [client] — props: clientId, gbpId — `apps\web\src\components\gbp\gbp-posts-manager.tsx`
+- **GbpProductsManager** [client] — props: clientId, gbpId — `apps\web\src\components\gbp\gbp-products-manager.tsx`
+- **GbpServicesManager** [client] — props: clientId, gbpId — `apps\web\src\components\gbp\gbp-services-manager.tsx`
+- **GbpVerificationWizard** — props: clientId, gbpId — `apps\web\src\components\gbp\gbp-verification-wizard.tsx`
+- **Header** [client] — `apps\web\src\components\layout\header.tsx`
+- **SessionProvider** [client] — `apps\web\src\components\providers\session-provider.tsx`
+- **MonthlyReportDocument** — props: month, year, totalClients, totalTasksCompleted, totalLeads, leadValue, clients, leadSources — `apps\web\src\components\reports\monthly-report.tsx`
+- **SettingsView** [client] — `apps\web\src\components\settings\settings-view.tsx`
+- **TaskKanbanView** [client] — props: tasks, isLoading, error — `apps\web\src\components\tasks\task-kanban-view.tsx`
+- **TasksView** [client] — `apps\web\src\components\tasks\tasks-view.tsx`

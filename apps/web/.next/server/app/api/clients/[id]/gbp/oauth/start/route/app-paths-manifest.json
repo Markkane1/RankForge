@@ -1,0 +1,3 @@
+{
+  "/api/clients/[id]/gbp/oauth/start/route": "app/api/clients/[id]/gbp/oauth/start/route.js"
+}

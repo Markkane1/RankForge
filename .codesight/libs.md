@@ -1,0 +1,174 @@
+# Libraries
+
+- `apps\api\src\app.controller.ts` — class AppController
+- `apps\api\src\app.module.ts` — class AppModule
+- `apps\api\src\app.service.ts` — class AppService
+- `apps\api\src\common\decorators\roles.decorator.js` — function RequireRole, const ROLES_KEY
+- `apps\api\src\common\decorators\roles.decorator.ts` — function RequireRole, const ROLES_KEY
+- `apps\api\src\common\filters\sentry-exception.filter.ts` — class SentryExceptionFilter
+- `apps\api\src\common\guards\roles.guard.ts` — class RolesGuard
+- `apps\api\src\common\middleware\tenant.middleware.ts` — class TenantMiddleware
+- `apps\api\src\modules\brightlocal\brightlocal.controller.ts` — class BrightlocalController
+- `apps\api\src\modules\brightlocal\brightlocal.module.ts` — class BrightlocalModule
+- `apps\api\src\modules\brightlocal\brightlocal.service.ts` — class BrightlocalService
+- `apps\api\src\modules\dataforseo\dataforseo.controller.ts` — class DataforseoController
+- `apps\api\src\modules\dataforseo\dataforseo.module.ts` — class DataforseoModule
+- `apps\api\src\modules\dataforseo\dataforseo.service.ts` — class DataforseoService
+- `apps\api\src\modules\gbp\gbp.controller.ts` — class GbpController
+- `apps\api\src\modules\gbp\gbp.dto.js` — class UpdateGbpProfileDto
+- `apps\api\src\modules\gbp\gbp.dto.ts` — class UpdateGbpProfileDto
+- `apps\api\src\modules\gbp\gbp.module.ts` — class GbpModule
+- `apps\api\src\modules\gbp\gbp.service.ts` — class GbpService
+- `apps\api\src\modules\localfalcon\localfalcon.controller.ts` — class LocalfalconController
+- `apps\api\src\modules\localfalcon\localfalcon.module.ts` — class LocalfalconModule
+- `apps\api\src\modules\localfalcon\localfalcon.service.ts` — class LocalfalconService
+- `apps\api\src\modules\security\credentials.service.ts` — class CredentialsService
+- `apps\api\src\modules\security\encryption.service.ts` — class EncryptionService
+- `apps\api\src\modules\security\security.module.ts` — class SecurityModule
+- `apps\api\src\modules\tasks\tasks.controller.ts` — class TasksController
+- `apps\api\src\modules\tasks\tasks.module.ts` — class TasksModule
+- `apps\api\src\modules\tasks\tasks.service.ts` — class TasksService
+- `apps\web\src\hooks\use-mobile.js` — function useIsMobile: () => void
+- `apps\web\src\hooks\use-mobile.ts` — function useIsMobile: () => void
+- `apps\web\src\hooks\use-toast.js` — function reducer
+- `apps\web\src\hooks\use-toast.ts` — function reducer
+- `apps\web\src\lib\api.js`
+  - function getDashboard
+  - function getClients
+  - function getClientDetail
+  - function updateClientState
+  - function updateClientNotes
+  - function getTasks
+  - _...39 more_
+- `apps\web\src\lib\api.ts`
+  - function getDashboard
+  - function getClients
+  - function getClientDetail
+  - function updateClientState
+  - function updateClientNotes
+  - function getTasks
+  - _...39 more_
+- `apps\web\src\lib\auth-guard.js`
+  - function requireSession: () => void
+  - function requireRole: (...roles) => void
+  - function requireOwner: () => void
+  - function hasMinimumRole: (actual, minimum) => void
+  - const ROLE_HIERARCHY
+- `apps\web\src\lib\auth-guard.ts`
+  - function requireSession: () => Promise<AuthResult>
+  - function requireRole: (...roles) => Promise<AuthResult>
+  - function requireOwner: () => Promise<AuthResult>
+  - function hasMinimumRole: (actual, minimum) => boolean
+  - interface SessionUser
+  - type AuthResult
+  - _...1 more_
+- `apps\web\src\lib\crypto.js`
+  - function encryptSecret: (plaintext, keyId) => void
+  - function decryptSecret: (ciphertext, keyId) => void
+  - function verifyGoogleWebhookSignature: (rawBody, signature, secret) => void
+  - function getSignInIp: (request) => void
+- `apps\web\src\lib\crypto.ts`
+  - function encryptSecret: (plaintext, keyId?) => Promise<string>
+  - function decryptSecret: (ciphertext, keyId?) => Promise<string>
+  - function verifyGoogleWebhookSignature: (rawBody, signature, secret) => boolean
+  - function getSignInIp: (request) => string
+- `apps\web\src\lib\hooks.js`
+  - function useCurrentUser: () => void
+  - function hasRole: (user, ...roles) => void
+  - function hasMinimumRole: (user, minimum) => void
+- `apps\web\src\lib\hooks.ts`
+  - function useCurrentUser: () => void
+  - function hasRole: (user, ...roles) => boolean
+  - function hasMinimumRole: (user, minimum) => boolean
+- `apps\web\src\lib\integrations\brightlocal.js` — class BrightLocalClient
+- `apps\web\src\lib\integrations\brightlocal.ts` — class BrightLocalClient
+- `apps\web\src\lib\integrations\dataforseo.js` — class DataForSeoClient
+- `apps\web\src\lib\integrations\dataforseo.ts` — class DataForSeoClient
+- `apps\web\src\lib\integrations\ga4.js` — class Ga4Client
+- `apps\web\src\lib\integrations\ga4.ts` — class Ga4Client
+- `apps\web\src\lib\integrations\google-business.js` — class GbpClient
+- `apps\web\src\lib\integrations\google-business.ts` — class GbpClient
+- `apps\web\src\lib\integrations\local-falcon.js` — class LocalFalconClient
+- `apps\web\src\lib\integrations\local-falcon.ts` — class LocalFalconClient
+- `apps\web\src\lib\integrations\sitemap-crawler.js` — class SitemapCrawler
+- `apps\web\src\lib\integrations\sitemap-crawler.ts` — class SitemapCrawler
+- `apps\web\src\lib\integrations\whatsapp.js` — class WhatsAppClient
+- `apps\web\src\lib\integrations\whatsapp.ts` — class WhatsAppClient
+- `apps\web\src\lib\kms.js`
+  - function getKmsKeyName: (keyId) => void
+  - function encryptWithKms: (plaintext, keyId) => void
+  - function decryptWithKms: (ciphertextB64, keyId) => void
+- `apps\web\src\lib\kms.ts`
+  - function getKmsKeyName: (keyId?) => string
+  - function encryptWithKms: (plaintext, keyId?) => Promise<string>
+  - function decryptWithKms: (ciphertextB64, keyId?) => Promise<string>
+- `apps\web\src\lib\rate-limit.js`
+  - function rateLimit: (key, limit, windowSec) => void
+  - function getLockout: (key) => void
+  - function recordFailure: (key, maxAttempts, lockoutSec) => void
+  - function clearFailures: (key) => void
+  - function rateLimitLogin: (ip, email) => void
+  - function rateLimit2fa: (userId) => void
+  - _...2 more_
+- `apps\web\src\lib\rate-limit.ts`
+  - function rateLimit: (key, limit, windowSec) => Promise<RateLimitResult>
+  - function getLockout: (key) => Promise<number | null>
+  - function recordFailure: (key, maxAttempts, lockoutSec) => Promise<
+  - function clearFailures: (key) => Promise<void>
+  - function rateLimitLogin: (ip, email) => Promise<RateLimitResult>
+  - function rateLimit2fa: (userId) => Promise<RateLimitResult>
+  - _...3 more_
+- `apps\web\src\lib\realtime-server.js` — function emitRealtimeEvent: (event, data, room) => void
+- `apps\web\src\lib\realtime-server.ts` — function emitRealtimeEvent: (event, data, room?) => void
+- `apps\web\src\lib\realtime.js`
+  - function getSocket: () => void
+  - function joinRoom: (roomId) => void
+  - function leaveRoom: (roomId) => void
+  - function emitTaskUpdate: (data) => void
+  - function emitApprovalUpdate: (data) => void
+- `apps\web\src\lib\realtime.ts`
+  - function getSocket: () => Socket
+  - function joinRoom: (roomId) => void
+  - function leaveRoom: (roomId) => void
+  - function emitTaskUpdate: (data) => void
+  - function emitApprovalUpdate: (data) => void
+- `apps\web\src\lib\use-realtime-events.js` — function useRealtimeEvents: () => void
+- `apps\web\src\lib\use-realtime-events.ts` — function useRealtimeEvents: () => void
+- `apps\web\src\lib\utils.js` — function cn: (...inputs) => void, function appendUtmTags: (url) => void
+- `apps\web\src\lib\utils.ts` — function cn: (...inputs) => void, function appendUtmTags: (url) => string | null
+- `apps\web\src\lib\validate-schema.js` — function validateSchema: (request, schema) => void
+- `apps\web\src\lib\validate-schema.ts` — function validateSchema: (request, schema) => Promise<
+- `apps\web\src\lib\validations.js`
+  - function isSafeExternalUrl: (urlStr) => void
+  - const safeUrlSchema
+  - const safeUrlOptionalSchema
+  - const createClientSchema
+  - const updateClientSettingsSchema
+  - const createKeywordSchema
+  - _...8 more_
+- `apps\web\src\lib\validations.ts`
+  - function isSafeExternalUrl: (urlStr) => boolean
+  - const safeUrlSchema
+  - const safeUrlOptionalSchema
+  - const createClientSchema
+  - const updateClientSettingsSchema
+  - const createKeywordSchema
+  - _...8 more_
+- `apps\worker\src\mailer.js` — function sendStatusAlert: (toEmail, clientName, statusMessage) => void
+- `apps\worker\src\mailer.ts` — function sendStatusAlert: (toEmail, clientName, statusMessage) => void
+- `apps\worker\src\schedulers.js` — function initSchedulers: () => void
+- `apps\worker\src\schedulers.ts` — function initSchedulers: () => void
+- `packages\database\src\conflict-check.js` — class ConflictOfInterestError
+- `packages\database\src\conflict-check.ts` — class ConflictOfInterestError
+- `packages\database\src\playbook.js` — function logPlaybookTactic: (prisma, params) => void, function analyzeNichePlaybook: (prisma, industryNiche) => void
+- `packages\database\src\playbook.ts` — function logPlaybookTactic: (prisma, params) => void, function analyzeNichePlaybook: (prisma, industryNiche) => void
+- `packages\database\src\state-machine.js`
+  - function validateTransition: (from, to) => void
+  - class IllegalStateTransitionError
+  - const LEGAL_TRANSITIONS
+- `packages\database\src\state-machine.ts`
+  - function validateTransition: (from, to) => boolean
+  - class IllegalStateTransitionError
+  - const LEGAL_TRANSITIONS: Record<ClientState, ClientState[]>
+- `packages\queue\src\idempotency.js` — function withRetry: (operation, maxRetries, baseDelayMs) => void, class IdempotentWriter
+- `packages\queue\src\idempotency.ts` — function withRetry: (operation) => void, class IdempotentWriter

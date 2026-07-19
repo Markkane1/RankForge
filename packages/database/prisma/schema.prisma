@@ -1,0 +1,833 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Core: Organization (single fixed row) ───
+model Organization {
+  id          String          @id @default(cuid())
+  name        String
+  slug        String          @unique
+  domain      String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  staffUsers  StaffUser[]
+  clients     Client[]
+  credentials OrgCredential[]
+}
+
+// ─── Core: Staff Users (agency internal team) ───
+enum StaffRole {
+  OWNER
+  COORDINATOR
+  APPROVER
+  VIEWER
+}
+
+model StaffUser {
+  id                  String            @id @default(cuid())
+  email               String            @unique
+  name                String
+  passwordHash        String            @default("")
+  role                StaffRole         @default(VIEWER)
+  avatarUrl           String?
+  isActive            Boolean           @default(true)
+  lastLoginAt         DateTime?
+  // ─── 2FA (TOTP, RFC 6238) ───
+  // secret stored AES-256-GCM encrypted at rest; backup codes bcrypt-hashed.
+  twoFactorEnabled    Boolean           @default(false)
+  twoFactorSecret     String?
+  twoFactorBackupHash String?
+  organizationId      String
+  organization        Organization      @relation(fields: [organizationId], references: [id])
+  assignedTasks       Task[]            @relation("TaskAssignee")
+  requestedTasks      Task[]            @relation("TaskRequester")
+  requestedApprovals  ApprovalRequest[] @relation("ApprovalRequester")
+  approvedApprovals   ApprovalRequest[] @relation("ApprovalApprover")
+  notifications       Notification[]    @relation("UserNotifications")
+  accounts            Account[]
+  sessions            Session[]
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([organizationId])
+}
+
+// ─── Core: Client (business served by the agency) ───
+enum ClientState {
+  ONBOARDING
+  BUILD
+  GROWTH
+  AT_RISK
+  PAUSED
+}
+
+enum ClientType {
+  SERVICE_AREA_BUSINESS
+  STOREFRONT_BUSINESS
+}
+
+model Client {
+  id             String                @id @default(cuid())
+  name           String
+  slug           String                @unique
+  businessName   String?
+  phone          String?
+  email          String?
+  website        String?
+  address        String?
+  city           String?
+  state          String?
+  country        String                @default("US")
+  postalCode     String?
+  type           ClientType            @default(SERVICE_AREA_BUSINESS)
+  lifecycleState ClientState           @default(ONBOARDING)
+  notes          String?
+  isActive       Boolean               @default(true)
+  organizationId String
+  organization   Organization          @relation(fields: [organizationId], references: [id])
+  gbpProfiles    GbpProfile[]
+  assets         ClientAsset[]
+  tasks          Task[]
+  approvals      ApprovalRequest[]
+  changeLog      ChangeLogEntry[]
+  leads          LeadLogEntry[]
+  reports        MonthlyReport[]
+  keywords       KeywordMapEntry[]
+  competitors    CompetitorBenchmark[]
+  serviceAreas   ServiceArea[]
+  credentials    ClientCredential[]
+  baseline       BaselineSnapshot?
+  portalUsers    ClientPortalUser[]
+  writeAttempts  WriteAttempt[]
+  preferences    ClientPreference[]
+  geoGridScans   GeoGridScanResult[]
+  siteAudits     SiteAudit[]
+  restorePoints  SiteRestorePoint[]
+  pageMatrixEntries PageMatrixEntry[]
+  citations      CitationRecord[]
+  backlinkOpportunities BacklinkOpportunity[]
+  secondaryReview SecondaryReviewMetric?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@index([organizationId])
+  @@index([lifecycleState])
+}
+
+// ─── GBP Profile ───
+model GbpProfile {
+  id                  String      @id @default(cuid())
+  clientId            String
+  client              Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  gbpAccountId        String?
+  gbpLocationId       String?
+  gbpLocationName     String?
+  primaryCategory     String?
+  secondaryCategories String? // JSON array stored as string
+  description         String?
+  websiteUrl             String?
+  bookingUrl             String?
+  bookingUrlOverrideNote String?
+  phone                  String?
+  address                String?
+  isVerified             Boolean     @default(false)
+  isSuspended            Boolean     @default(false)
+  lastSyncedAt           DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  posts               GbpPost[]
+  reviews             GbpReview[]
+  photos              GbpPhoto[]
+  services            GbpService[]
+  products            GbpProduct[]
+  faqs                GbpFaq[]
+}
+
+model GbpFaq {
+  id           String     @id @default(cuid())
+  gbpProfileId String
+  gbpProfile   GbpProfile @relation(fields: [gbpProfileId], references: [id], onDelete: Cascade)
+  question     String
+  answer       String     @db.Text
+  lastTestedAt DateTime?
+  passCount    Int        @default(0)
+  failCount    Int        @default(0)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([gbpProfileId])
+}
+
+model GbpCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  group     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model GbpProduct {
+  id           String     @id @default(cuid())
+  gbpProfileId String
+  gbpProfile   GbpProfile @relation(fields: [gbpProfileId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  price        Float?
+  category     String?
+  url          String?
+  isUrlValid   Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([gbpProfileId])
+}
+
+model GbpPost {
+  id           String     @id @default(cuid())
+  gbpProfileId String
+  gbpProfile   GbpProfile @relation(fields: [gbpProfileId], references: [id], onDelete: Cascade)
+  title        String
+  content      String
+  ctaButton    String?
+  ctaUrl       String?
+  eventType    String? // OFFER, EVENT, PRODUCT, etc.
+  startDate    DateTime?
+  endDate      DateTime?
+  status       String     @default("DRAFT") // DRAFT, PUBLISHED, FAILED, STALE
+  scheduledAt  DateTime?
+  publishedAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model GbpReview {
+  id           String     @id @default(cuid())
+  gbpProfileId String
+  gbpProfile   GbpProfile @relation(fields: [gbpProfileId], references: [id], onDelete: Cascade)
+  reviewerName String?
+  rating       Int // 1-5
+  content      String?
+  reviewDate   DateTime?
+  replyText    String?
+  repliedAt    DateTime?
+  source       String     @default("GOOGLE")
+  createdAt    DateTime   @default(now())
+}
+
+model GbpPhoto {
+  id           String     @id @default(cuid())
+  gbpProfileId String
+  gbpProfile   GbpProfile @relation(fields: [gbpProfileId], references: [id], onDelete: Cascade)
+  url          String
+  category     String? // EXTERIOR, INTERIOR, PRODUCT, TEAM, etc.
+  description  String?
+  uploadedAt   DateTime?
+  createdAt    DateTime   @default(now())
+}
+
+model GeoGridScanResult {
+  id           String   @id @default(cuid())
+  clientId     String
+  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  keyword      String
+  gridSize     Int      // e.g. 3 for 3x3
+  scanDate     DateTime
+  averageRank  Float
+  pointResults Json     // array of {lat,lng,rank}
+  createdAt    DateTime @default(now())
+
+  @@index([clientId])
+}
+
+model GbpService {
+  id               String     @id @default(cuid())
+  gbpProfileId     String
+  gbpProfile       GbpProfile @relation(fields: [gbpProfileId], references: [id], onDelete: Cascade)
+  name             String
+  description      String?
+  price            Float?
+  isPriceConfirmed Boolean    @default(false)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  @@index([gbpProfileId])
+}
+
+// ─── Client Assets (external account references) ───
+model ClientAsset {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  assetType   String // GOOGLE_ACCOUNT, DOMAIN, GA4, GSC, GBP_LOCATION, WHATSAPP
+  externalId  String?
+  label       String?
+  metadata    String? // JSON
+  isVerified  Boolean   @default(false)
+  connectedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// ─── Keyword Map ───
+model KeywordMapEntry {
+  id           String   @id @default(cuid())
+  clientId     String
+  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  keyword      String
+  searchVolume Int?
+  difficulty   Float?
+  intent       String? // INFORMATIONAL, NAVIGATIONAL, COMMERCIAL, TRANSACTIONAL
+  mapPack      Boolean  @default(false)
+  currentRank  Int?
+  targetRank   Int?
+  priority     Int      @default(5) // 1=high, 10=low
+  status       String   @default("ACTIVE") // ACTIVE, ACHIEVED, DROPPED
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([clientId])
+}
+
+// ─── Competitor Benchmarks ───
+model CompetitorBenchmark {
+  id              String   @id @default(cuid())
+  clientId        String
+  client          Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  competitorName  String
+  competitorGbpId String?
+  competitorUrl   String?
+  categories      String? // JSON array
+  avgRating       Float?
+  reviewCount     Int?
+  photoCount      Int?
+  postFrequency   String?
+  strengths       String? // JSON
+  weaknesses      String? // JSON
+  analyzedAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([clientId])
+}
+
+// ─── Service Areas ───
+model ServiceArea {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name        String
+  city        String?
+  radiusMiles Float? // for SAB
+  isPrimary   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([clientId])
+}
+
+// ─── Module 6: Task (scheduler unit) ───
+enum TaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  PENDING_APPROVAL
+  DONE
+  FAILED
+  BLOCKED
+  DEFERRED
+}
+
+enum TaskPriority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+model Task {
+  id             String            @id @default(cuid())
+  taskId         String // e.g. "M1-3.1", "M6-STATE-01"
+  clientId       String?
+  client         Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  title          String
+  description    String?
+  module         String // M1, M2, M3, M4, M5, M6, META, CORE
+  sprint         Int? // Sprint number
+  priority       TaskPriority      @default(MEDIUM)
+  status         TaskStatus        @default(NOT_STARTED)
+  assignedToId   String?
+  assignedTo     StaffUser?        @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  requestedById  String?
+  requestedBy    StaffUser?        @relation("TaskRequester", fields: [requestedById], references: [id])
+  scheduledFor   DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  dueDate        DateTime?
+  result         String? // JSON - outcome of the task
+  errorMessage   String?
+  retryCount     Int               @default(0)
+  maxRetries     Int               @default(3)
+  idempotencyKey String?           @unique
+  isDryRun       Boolean           @default(false)
+  subtasks       Subtask[]
+  logs           TaskLog[]
+  approvals      ApprovalRequest[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([clientId])
+  @@index([status])
+  @@index([priority])
+  @@index([module])
+}
+
+// ─── Subtask (child checklist items on a Task) ───
+model Subtask {
+  id          String   @id @default(cuid())
+  taskId      String
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  title       String
+  isCompleted Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([taskId])
+}
+
+model TaskLog {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  level     String   @default("INFO") // INFO, WARN, ERROR, DEBUG
+  message   String
+  metadata  String? // JSON
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
+}
+
+// ─── Module 6: Approval Queue ───
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model ApprovalRequest {
+  id             String         @id @default(cuid())
+  clientId       String?
+  client         Client?        @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  taskId         String?
+  task           Task?          @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  title          String
+  description    String
+  requestType    String // CATEGORY_CHANGE, POST_PUBLISH, CONTENT_PUBLISH, SUSPENSION_RESPONSE, etc.
+  requestData    String? // JSON - what will be changed
+  status         ApprovalStatus @default(PENDING)
+  requestedById  String
+  requestedBy    StaffUser      @relation("ApprovalRequester", fields: [requestedById], references: [id])
+  approvedById   String?
+  approvedBy     StaffUser?     @relation("ApprovalApprover", fields: [approvedById], references: [id])
+  rejectedReason String?
+  reviewedAt     DateTime?
+  expiresAt      DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([status])
+  @@index([clientId])
+}
+
+// ─── Change Log (audit trail) ───
+model ChangeLogEntry {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  module      String // M1, M2, M3, M4, M5, M6
+  entityType  String // e.g. "GbpProfile", "GbpPost", "CitationRecord"
+  entityId    String?
+  field       String?
+  oldValue    String?
+  newValue    String?
+  changedById String?
+  taskId      String?
+  createdAt   DateTime @default(now())
+
+  @@index([clientId])
+  @@index([createdAt])
+}
+
+// ─── Build Requirement Tracker ───
+enum ReqStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  DONE
+  BLOCKED
+  DEFERRED
+}
+
+model BuildRequirement {
+  id          String    @id @default(cuid())
+  reqId       String    @unique // e.g. "REQ-M1-01", "REQ-M6-STATE-01"
+  title       String
+  description String?
+  module      String // M1, M2, M3, M4, M5, M6, META, CORE, AUTH, SEC, NFR
+  sprint      Int?
+  status      ReqStatus @default(NOT_STARTED)
+  blockedBy   String? // External dependency description
+  note        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// ─── Module 5: Leads ───
+enum LeadSource {
+  GBP_CALL
+  GBP_DIRECTIONS
+  GBP_WEBSITE
+  FORM_SUBMISSION
+  PHONE_CALL
+  WHATSAPP
+  EMAIL
+  ORGANIC_SEARCH
+  REFERRAL
+  OTHER
+}
+
+model LeadLogEntry {
+  id          String     @id @default(cuid())
+  clientId    String
+  client      Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  source      LeadSource
+  value       Float? // Estimated value in USD
+  contactInfo String? // Redacted/encrypted
+  notes       String?
+  convertedAt DateTime?
+  createdAt   DateTime   @default(now())
+
+  @@index([clientId])
+  @@index([createdAt])
+}
+
+// ─── Module 5: Monthly Reports ───
+model MonthlyReport {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  month       Int // 1-12
+  year        Int
+  headline    String? // Plain-language summary
+  kpisJson    String? // JSON blob of KPI snapshot
+  generatedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@unique([clientId, month, year])
+  @@index([clientId])
+}
+
+// ─── Organization Credentials (agency-level API keys) ───
+model OrgCredential {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  service        String // DATAFORSEO, LOCAL_FALCON, BRIGHTLOCAL, WHATSAPP, SENDGRID, etc.
+  label          String?
+  encryptedKey   String // AES-256-GCM encrypted
+  keyId          String? // KMS key reference
+  isValid        Boolean      @default(true)
+  lastCheckedAt  DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId, service])
+}
+
+// ─── NextAuth: Account ───
+model Account {
+  id                String    @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              StaffUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+// ─── NextAuth: Session ───
+model Session {
+  id           String    @id @default(cuid())
+  sessionToken String    @unique
+  userId       String
+  expires      DateTime
+  user         StaffUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── Client Credentials (per-client OAuth tokens) ───
+model ClientCredential {
+  id             String    @id @default(cuid())
+  clientId       String
+  client         Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  service        String // GBP, GA4, GSC, WHATSAPP
+  encryptedToken String // AES-256-GCM encrypted
+  refreshToken   String? // Encrypted
+  tokenExpiryAt  DateTime?
+  scope          String?
+  isValid        Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([clientId, service])
+}
+
+// ─── Notifications (persisted, per-user) ───
+model Notification {
+  id                String    @id @default(cuid())
+  userId            String
+  user              StaffUser @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  type              String // approval_assigned, task_completed, lead_converted, client_at_risk
+  title             String
+  message           String
+  isRead            Boolean   @default(false)
+  relatedEntityId   String? // e.g. approval ID, task ID
+  relatedEntityType String? // e.g. 'approval', 'task', 'client'
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+// ─── NextAuth: VerificationToken (for Magic Links) ───
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Module 5: Baseline Snapshot (Immutability check) ───
+model BaselineSnapshot {
+  id          String   @id @default(cuid())
+  clientId    String   @unique
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  metricsJson String // JSON blob containing initial keyword ranks, GBP stats, etc.
+  capturedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── Client Portal (Passportless Magic-Link Access) ───
+model ClientPortalUser {
+  id          String    @id @default(cuid())
+  email       String    @unique
+  name        String?
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  isActive    Boolean   @default(true)
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([clientId])
+}
+
+// ─── BullMQ / Queue Idempotency & Monitoring ───
+enum AttemptStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+model WriteAttempt {
+  id             String        @id @default(cuid())
+  idempotencyKey String        @unique
+  jobId          String? // Reference to BullMQ job ID
+  action         String // e.g. "PUBLISH_GBP_POST", "SYNC_REVIEWS"
+  status         AttemptStatus @default(PENDING)
+  payload        String? // JSON: What was attempted
+  result         String? // JSON: Success response or error stack
+  clientId       String?
+  client         Client?       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([action])
+  @@index([status])
+  @@index([clientId])
+}
+
+// ─── Appendix D Capability Mapping ───
+enum ExecutionRoute {
+  API
+  PARTNER
+  HUMAN
+}
+
+model CapabilityMapping {
+  id               String         @id @default(cuid())
+  capability       String         @unique // e.g., "GBP_POST_CREATE", "REVIEW_REPLY"
+  primaryRoute     ExecutionRoute @default(API)
+  fallbackRoute    ExecutionRoute?
+  requiresApproval Boolean        @default(false)
+  description      String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([primaryRoute])
+}
+
+// ─── Module 6: Client Preferences (Brand Rules) ───
+model ClientPreference {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tag       String?  // e.g., "TONE_OF_VOICE", "RESTRICTED_WORDS"
+  content   String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+}
+
+// ─── Module 6: Playbook Telemetry (Aggregated Intelligence) ───
+model PlaybookTelemetry {
+  id              String   @id @default(cuid())
+  tacticName      String   // e.g., "ADD_SECONDARY_CATEGORY", "WEEKLY_POSTS"
+  industryNiche   String?  // e.g., "Plumbing", "Lawyer"
+  successScore    Float?   // E.g., Rank increase correlated with this tactic
+  anonymizedData  String?  // JSON blob for generalized stats
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([tacticName])
+  @@index([industryNiche])
+}
+
+// ─── Module 2: Site Audit & Fix List ───
+model SiteAudit {
+  id           String           @id @default(cuid())
+  clientId     String
+  client       Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  crawlDate    DateTime         @default(now())
+  status       String           @default("PENDING") // PENDING, COMPLETED, FAILED
+  totalUrls    Int              @default(0)
+  issues       SiteAuditIssue[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([clientId])
+}
+
+model SiteAuditIssue {
+  id           String      @id @default(cuid())
+  siteAuditId  String
+  siteAudit    SiteAudit   @relation(fields: [siteAuditId], references: [id], onDelete: Cascade)
+  url          String
+  severity     String      // CRITICAL, HIGH, MEDIUM, LOW
+  issueType    String      // BROKEN_LINK, MISSING_H1, MULTIPLE_H1, MISSING_TITLE, META_TOO_LONG, CANNIBALIZATION, etc.
+  description  String?
+  isResolved   Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([siteAuditId])
+}
+
+// ─── Module 2: Restore Points ───
+model SiteRestorePoint {
+  id           String    @id @default(cuid())
+  clientId     String
+  client       Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  snapshotData String    // JSON containing previous site structure or page data
+  description  String?
+  restoredAt   DateTime? // null if never restored
+  
+  @@index([clientId])
+}
+
+// ─── Module 2: Page Matrix Builder ───
+model PageMatrixEntry {
+  id             String   @id @default(cuid())
+  clientId       String
+  client         Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  slug           String
+  pageType       String
+  primaryKeyword String
+  targetArea     String?
+  priority       Int      @default(5)
+  status         String   @default("DRAFT") // DRAFT, READY, PUBLISHED
+  content        String?  // JSON string or HTML text
+  schemaJson     String?  // JSON-LD schema markup
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([clientId, primaryKeyword])
+  @@index([clientId])
+}
+
+// ─── Module 3: Citations & Local Authority ───
+model CitationRecord {
+  id             String    @id @default(cuid())
+  clientId       String
+  client         Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  platform       String    // e.g. "Yelp", "YellowPages"
+  url            String?
+  napStatus      String    // e.g. "MATCHING", "MISMATCH", "MISSING"
+  tier           Int       @default(1) // 1, 2, 3
+  status         String    @default("PENDING") // PENDING, SUBMITTED, VERIFIED
+  credentialsRef String?   // Reference to stored credentials mapping
+  submittedAt    DateTime?
+  lastVerifiedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([clientId])
+}
+
+model BacklinkOpportunity {
+  id             String   @id @default(cuid())
+  clientId       String
+  client         Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  url            String
+  domainRating   Float?
+  competitorUrl  String
+  status         String   @default("NEW") // NEW, CONTACTED, ACQUIRED, REJECTED
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([clientId])
+}
+
+model SecondaryReviewMetric {
+  id               String   @id @default(cuid())
+  clientId         String   @unique
+  client           Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  facebookCount    Int      @default(0)
+  facebookRating   Float    @default(0.0)
+  trustpilotCount  Int      @default(0)
+  trustpilotRating Float    @default(0.0)
+  lastSyncedAt     DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+
+

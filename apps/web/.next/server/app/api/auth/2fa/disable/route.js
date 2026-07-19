@@ -1,0 +1,11 @@
+var R=require("../../../../../chunks/[turbopack]_runtime.js")("server/app/api/auth/2fa/disable/route.js")
+R.c("server/chunks/[root-of-the-server]__03f90jz._.js")
+R.c("server/chunks/_0od6_z2._.js")
+R.c("server/chunks/[root-of-the-server]__1_o-wf8._.js")
+R.c("server/chunks/[root-of-the-server]__1s19urb._.js")
+R.c("server/chunks/[root-of-the-server]__05-hz6g._.js")
+R.c("server/chunks/[root-of-the-server]__0pb_nft._.js")
+R.c("server/chunks/node_modules_zod_v4_classic_external_1-pw2v2.js")
+R.c("server/chunks/apps_web__next-internal_server_app_api_auth_2fa_disable_route_actions_14nfwy2.js")
+R.m(500294)
+module.exports=R.m(500294).exports
