@@ -1,4 +1,11 @@
-import { Controller, Post, Param, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Param,
+  Body,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import { SiteAuditService } from './site-audit.service';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 
@@ -16,14 +23,21 @@ export class SiteAuditController {
   }
 
   @ApiOperation({ summary: 'Create a restore point' })
-  @ApiResponse({ status: 201, description: 'Restore point created successfully' })
+  @ApiResponse({
+    status: 201,
+    description: 'Restore point created successfully',
+  })
   @Post('restore-point')
   async createRestorePoint(
     @Param('id') clientId: string,
     @Body('snapshotData') snapshotData: string,
-    @Body('description') description?: string
+    @Body('description') description?: string,
   ) {
-    return this.siteAuditService.createRestorePoint(clientId, snapshotData, description);
+    return this.siteAuditService.createRestorePoint(
+      clientId,
+      snapshotData,
+      description,
+    );
   }
 
   @ApiOperation({ summary: 'Execute a fix for an issue' })
@@ -31,7 +45,7 @@ export class SiteAuditController {
   @Post('issues/:issueId/fix')
   async executeFix(
     @Param('id') clientId: string,
-    @Param('issueId') issueId: string
+    @Param('issueId') issueId: string,
   ) {
     return this.siteAuditService.executeFix(clientId, issueId);
   }

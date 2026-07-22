@@ -9,15 +9,18 @@ export interface RateLimitResult {
 }
 
 /**
+ * Helper to wrap a promise with a timeout. If the promise does not resolve within
+ * ms, it resolves to the fallback value.
+ */
+async function withTimeout<T>(promise: Promise<T> | T, fallback: T, ms = 1000): Promise<T> {
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
+/**
  * Generic Redis-backed sliding-window rate limiter.
- *
- * Uses INCR + EXPIRE pattern:
- *   - First request in window: INCR sets key to 1, EXPIRE sets TTL.
- *   - Subsequent: INCR increments. If > limit, reject.
- *
- * @param key    — Redis key prefix (e.g. `rl:login:1.2.3.4:user@example.com`)
- * @param limit  — Max requests allowed in the window
- * @param windowSec — Window duration in seconds
  */
 export async function rateLimit(
   key: string,
@@ -26,28 +29,37 @@ export async function rateLimit(
 ): Promise<RateLimitResult> {
   const fullKey = `ratelimit:${key}:${Math.floor(Date.now() / 1000 / windowSec)}`;
 
-  const count = await redisConnection.incr(fullKey);
+  try {
+    const count = await withTimeout(redisConnection.incr(fullKey), 1);
 
-  // Set expiry on first hit in this window
-  if (count === 1) {
-    await redisConnection.expire(fullKey, windowSec);
-  }
+    // Set expiry on first hit in this window
+    if (count === 1) {
+      await withTimeout(redisConnection.expire(fullKey, windowSec), true);
+    }
 
-  if (count > limit) {
-    // Calculate retryAfter from the key's remaining TTL
-    const ttl = await redisConnection.ttl(fullKey);
+    if (count > limit) {
+      // Calculate retryAfter from the key's remaining TTL
+      const ttl = await withTimeout(redisConnection.ttl(fullKey), windowSec);
+      return {
+        success: false,
+        remaining: 0,
+        retryAfter: Math.max(1, ttl),
+      };
+    }
+
     return {
-      success: false,
-      remaining: 0,
-      retryAfter: Math.max(1, ttl),
+      success: true,
+      remaining: limit - count,
+      retryAfter: null,
+    };
+  } catch (err) {
+    console.error('Rate limiter Redis error, falling back to allow:', err);
+    return {
+      success: true,
+      remaining: limit,
+      retryAfter: null,
     };
   }
-
-  return {
-    success: true,
-    remaining: limit - count,
-    retryAfter: null,
-  };
 }
 
 // ─── Account lockout after repeated failures ───
@@ -57,8 +69,13 @@ export async function rateLimit(
  * Returns the remaining TTL if locked, null if not.
  */
 export async function getLockout(key: string): Promise<number | null> {
-  const ttl = await redisConnection.ttl(`lockout:${key}`);
-  return ttl > 0 ? ttl : null;
+  try {
+    const ttl = await withTimeout(redisConnection.ttl(`lockout:${key}`), -1);
+    return ttl > 0 ? ttl : null;
+  } catch (err) {
+    console.error('Lockout check Redis error:', err);
+    return null;
+  }
 }
 
 /**
@@ -72,25 +89,34 @@ export async function recordFailure(
 ): Promise<{ count: number; locked: boolean }> {
   const fullKey = `failures:${key}`;
 
-  const count = await redisConnection.incr(fullKey);
-  if (count === 1) {
-    await redisConnection.expire(fullKey, lockoutSec);
-  }
+  try {
+    const count = await withTimeout(redisConnection.incr(fullKey), 1);
+    if (count === 1) {
+      await withTimeout(redisConnection.expire(fullKey, lockoutSec), true);
+    }
 
-  if (count >= maxAttempts) {
-    // Set lockout that lasts the full window
-    await redisConnection.set(`lockout:${key}`, '1', 'EX', lockoutSec);
-    return { count, locked: true };
-  }
+    if (count >= maxAttempts) {
+      // Set lockout that lasts the full window
+      await withTimeout(redisConnection.set(`lockout:${key}`, '1', 'EX', lockoutSec), 'OK');
+      return { count, locked: true };
+    }
 
-  return { count, locked: false };
+    return { count, locked: false };
+  } catch (err) {
+    console.error('Record failure Redis error:', err);
+    return { count: 1, locked: false };
+  }
 }
 
 /**
  * Clear failure counters on successful authentication.
  */
 export async function clearFailures(key: string): Promise<void> {
-  await redisConnection.del(`failures:${key}`, `lockout:${key}`);
+  try {
+    await withTimeout(redisConnection.del(`failures:${key}`, `lockout:${key}`), 0);
+  } catch (err) {
+    console.error('Clear failures Redis error:', err);
+  }
 }
 
 // ─── Pre-built throttle configs ───

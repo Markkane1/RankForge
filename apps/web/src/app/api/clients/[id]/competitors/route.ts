@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { withClientTenant } from "@/lib/db";
 import { requireRole } from "@/lib/auth-guard";
 import { DataForSeoClient } from "@/lib/integrations/dataforseo";
 
@@ -18,7 +18,9 @@ export async function POST(
       return NextResponse.json({ error: "keyword and location_name are required" }, { status: 400 });
     }
 
-    const client = await db.client.findUnique({ where: { id: clientId } });
+    const client = await withClientTenant(clientId, (tenantDb) =>
+      tenantDb.client.findUnique({ where: { id: clientId } })
+    );
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -38,25 +40,24 @@ export async function POST(
     }
 
     // Save to database
-    const operations = liveBenchmarks.map((b: any) => 
-      db.competitorBenchmark.create({
-        data: {
-          clientId,
-          competitorName: b.competitorName,
-          competitorGbpId: b.competitorGbpId,
-          competitorUrl: b.competitorUrl,
-          categories: b.categories,
-          avgRating: b.avgRating,
-          reviewCount: b.reviewCount,
-        }
-      })
+    await withClientTenant(clientId, (tenantDb) =>
+      Promise.all(
+        liveBenchmarks.map((b: any) =>
+          tenantDb.competitorBenchmark.create({
+            data: {
+              clientId,
+              competitorName: b.competitorName,
+              competitorGbpId: b.competitorGbpId,
+              competitorUrl: b.competitorUrl,
+              categories: b.categories,
+              avgRating: b.avgRating,
+              reviewCount: b.reviewCount,
+              sourceLineage: JSON.stringify(b.sourceLineage),
+            }
+          })
+        )
+      )
     );
-
-    await db.$transaction([
-      // Optionally clear old competitors for this keyword footprint
-      // db.competitorBenchmark.deleteMany({ where: { clientId } }), 
-      ...operations
-    ]);
 
     return NextResponse.json({ imported: liveBenchmarks.length }, { status: 201 });
   } catch (error) {

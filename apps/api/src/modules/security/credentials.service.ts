@@ -1,14 +1,21 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { prisma } from '@rankforge/database';
+import {
+  GBP_OAUTH_SERVICE,
+  LEGACY_GBP_SERVICE,
+  prisma,
+} from '@rankforge/database';
 import { EncryptionService } from './encryption.service';
 
 @Injectable()
 export class CredentialsService {
   constructor(private encryptionService: EncryptionService) {}
 
-  async getOrgCredential(organizationId: string, service: string): Promise<string> {
+  async getOrgCredential(
+    organizationId: string,
+    service: string,
+  ): Promise<string> {
     const cred = await prisma.orgCredential.findFirst({
-      where: { organizationId, service, isValid: true }
+      where: { organizationId, service, isValid: true },
     });
 
     if (!cred) {
@@ -18,13 +25,18 @@ export class CredentialsService {
     return this.encryptionService.decrypt(cred.encryptedKey);
   }
 
-  async setOrgCredential(organizationId: string, service: string, key: string, label?: string): Promise<void> {
+  async setOrgCredential(
+    organizationId: string,
+    service: string,
+    key: string,
+    label?: string,
+  ): Promise<void> {
     const encryptedKey = this.encryptionService.encrypt(key);
-    
+
     // Invalidate old credentials for this service
     await prisma.orgCredential.updateMany({
       where: { organizationId, service },
-      data: { isValid: false }
+      data: { isValid: false },
     });
 
     await prisma.orgCredential.create({
@@ -33,41 +45,63 @@ export class CredentialsService {
         service,
         encryptedKey,
         label,
-        isValid: true
-      }
+        isValid: true,
+      },
     });
   }
 
-  async getClientCredential(clientId: string, service: string): Promise<{ token: string; refreshToken?: string }> {
+  async getClientCredential(
+    clientId: string,
+    service: string,
+  ): Promise<{ token: string; refreshToken?: string }> {
     const cred = await prisma.clientCredential.findFirst({
-      where: { clientId, service, isValid: true }
+      where: {
+        clientId,
+        service:
+          service === GBP_OAUTH_SERVICE
+            ? { in: [GBP_OAUTH_SERVICE, LEGACY_GBP_SERVICE] }
+            : service,
+        isValid: true,
+      },
     });
 
     if (!cred) {
-      throw new NotFoundException(`Valid credential for ${service} not found for client`);
+      throw new NotFoundException(
+        `Valid credential for ${service} not found for client`,
+      );
     }
 
     return {
       token: this.encryptionService.decrypt(cred.encryptedToken),
-      refreshToken: cred.refreshToken ? this.encryptionService.decrypt(cred.refreshToken) : undefined,
+      refreshToken: cred.refreshToken
+        ? this.encryptionService.decrypt(cred.refreshToken)
+        : undefined,
     };
   }
 
   async setClientCredential(
-    clientId: string, 
-    service: string, 
-    token: string, 
+    clientId: string,
+    service: string,
+    token: string,
     refreshToken?: string,
     scope?: string,
-    tokenExpiryAt?: Date
+    tokenExpiryAt?: Date,
   ): Promise<void> {
     const encryptedToken = this.encryptionService.encrypt(token);
-    const encryptedRefresh = refreshToken ? this.encryptionService.encrypt(refreshToken) : undefined;
-    
+    const encryptedRefresh = refreshToken
+      ? this.encryptionService.encrypt(refreshToken)
+      : undefined;
+
     // Invalidate old credentials for this service
     await prisma.clientCredential.updateMany({
-      where: { clientId, service },
-      data: { isValid: false }
+      where: {
+        clientId,
+        service:
+          service === GBP_OAUTH_SERVICE
+            ? { in: [GBP_OAUTH_SERVICE, LEGACY_GBP_SERVICE] }
+            : service,
+      },
+      data: { isValid: false },
     });
 
     await prisma.clientCredential.create({
@@ -78,8 +112,8 @@ export class CredentialsService {
         refreshToken: encryptedRefresh,
         scope,
         tokenExpiryAt,
-        isValid: true
-      }
+        isValid: true,
+      },
     });
   }
 }

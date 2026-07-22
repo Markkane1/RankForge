@@ -15,6 +15,11 @@ export async function initSchedulers() {
     }
   );
 
+  await taskQueue.add('OffboardingRetentionSweep', {}, {
+    repeat: { pattern: '15 0 * * *' },
+    jobId: 'offboarding-retention-sweep-schedule',
+  });
+
   // 2. Weekly Rank Updates
   await taskQueue.add(
     'WeeklyRankUpdate',
@@ -61,6 +66,22 @@ export async function initSchedulers() {
   // 7. Monthly Conversion Optimization Loop (1st of every month at midnight)
   await taskQueue.add('MonthlyConversionOptimizationLoop', {}, {
     repeat: { pattern: '0 0 1 * *' }
+  });
+
+  await taskQueue.add('WelcomeClientCommunication', {}, {
+    repeat: { pattern: '0 9 * * *' }
+  });
+
+  await taskQueue.add('WeeklyBuildSummary', {}, {
+    repeat: { pattern: '0 9 * * 1' }
+  });
+
+  await taskQueue.add('MilestoneCommunication', {}, {
+    repeat: { pattern: '30 9 * * *' }
+  });
+
+  await taskQueue.add('MonthlyReportDelivery', {}, {
+    repeat: { pattern: '0 10 1 * *' }
   });
 
   console.log('Background schedulers initialized.');

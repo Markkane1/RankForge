@@ -8,12 +8,16 @@ import * as Sentry from "@sentry/nextjs";
 
 import { rateLimitSensitive } from "@/lib/rate-limit";
 import { getSignInIp } from "@/lib/crypto";
+import { requireRole } from "@/lib/auth-guard";
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireRole('OWNER', 'COORDINATOR');
+    if (!auth.ok) return auth.response;
+
     const ip = getSignInIp(request);
     const rl = await rateLimitSensitive(ip, 'update_task');
     if (!rl.success) {
@@ -38,8 +42,8 @@ export async function PUT(
 
     const newStatus = parsed.data.status as TaskStatus;
 
-    // Ponytail: Synchronous state-machine validation before enqueuing
-    if (newStatus === "DONE") {
+    // REQ-M6-TASK-02: task status workflow validation before enqueueing status changes.
+    if (newStatus === "IN_PROGRESS" || newStatus === "DONE") {
       const task = await db.task.findUnique({
         where: { id },
         include: { subtasks: true }
@@ -47,7 +51,18 @@ export async function PUT(
       if (!task) {
         return NextResponse.json({ error: "Task not found" }, { status: 404 });
       }
-      if (task.subtasks?.some(st => !st.isCompleted)) {
+      if (task.dependsOnTaskIds.length) {
+        const completedDependencies = await db.task.count({
+          where: { id: { in: task.dependsOnTaskIds }, status: "DONE" },
+        });
+        if (completedDependencies !== task.dependsOnTaskIds.length) {
+          return NextResponse.json(
+            { error: "Cannot start task: dependency tasks are not DONE." },
+            { status: 400 }
+          );
+        }
+      }
+      if (newStatus === "DONE" && task.subtasks?.some(st => !st.isCompleted)) {
         return NextResponse.json(
           { error: "Cannot mark task as DONE: Pending subtasks exist." },
           { status: 400 }
@@ -63,6 +78,8 @@ export async function PUT(
     }, {
       removeOnComplete: true,
       removeOnFail: false,
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 5000 },
     });
 
     // Return 202 Accepted instantly

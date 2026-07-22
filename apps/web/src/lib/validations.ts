@@ -6,7 +6,7 @@ export function isSafeExternalUrl(urlStr: string | null | undefined): boolean {
   try {
     const url = new URL(urlStr);
     const hostname = url.hostname.toLowerCase();
-    
+
     // Check against local/private network domains and IPs
     const forbiddenHostnames = [
       "localhost",
@@ -14,7 +14,7 @@ export function isSafeExternalUrl(urlStr: string | null | undefined): boolean {
       "::1",
       "169.254.169.254", // AWS Metadata
     ];
-    
+
     if (forbiddenHostnames.includes(hostname)) return false;
 
     // Check for common private IP ranges (basic regex match)
@@ -28,10 +28,10 @@ export function isSafeExternalUrl(urlStr: string | null | undefined): boolean {
       if (o1 === 172 && o2 >= 16 && o2 <= 31) return false; // 172.16.x.x - 172.31.x.x
       if (o1 === 192 && o2 === 168) return false; // 192.168.x.x
     }
-    
+
     return true;
   } catch (err) {
-    // If it's not a valid URL, it can't be used for SSRF in a fetch call directly, 
+    // If it's not a valid URL, it can't be used for SSRF in a fetch call directly,
     // but usually we want valid URLs anyway.
     return false;
   }
@@ -42,46 +42,144 @@ export const safeUrlSchema = z.string().url().refine(isSafeExternalUrl, {
   message: "Invalid or forbidden URL",
 });
 
-export const safeUrlOptionalSchema = z.string().url().refine(isSafeExternalUrl, {
-  message: "Invalid or forbidden URL",
-}).optional().nullable().or(z.literal(""));
+export const safeUrlOptionalSchema = z
+  .string()
+  .url()
+  .refine(isSafeExternalUrl, {
+    message: "Invalid or forbidden URL",
+  })
+  .optional()
+  .nullable()
+  .or(z.literal(""));
 
-export const createClientSchema = z.object({
-  name: z.string().min(3, "Name must be at least 3 characters"),
-  businessName: z.string().optional().nullable(),
-  phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, "Phone must be in valid E.164 format (e.g., +1234567890)").optional().nullable().or(z.literal("")),
-  email: z.string().email().optional().nullable().or(z.literal("")),
-  website: safeUrlOptionalSchema,
-  address: z.string().optional().nullable(),
-  city: z.string().optional().nullable(),
-  state: z.string().optional().nullable(),
-  country: z.string().optional().nullable(),
-  postalCode: z.string().regex(/^\d{5}(-\d{4})?$/, "Must be a valid US zip code").optional().nullable().or(z.literal("")),
-  type: z.enum(["SERVICE_AREA_BUSINESS", "STOREFRONT_BUSINESS"]).optional().nullable(),
-  notes: z.string().optional().nullable(),
-  primaryCategory: z.string().optional().nullable(),
-  secondaryCategories: z.string().optional().nullable(),
-  gbpDescription: z.string().max(750, "Google Business Profile descriptions are limited to 750 characters").optional().nullable(),
-  businessHours: z.string().optional().nullable(),
-  gbpMapUrl: z.string().url("Must be a valid Google Maps URL").regex(/google\.com\/maps/, "Must be a Google Maps link").optional().nullable().or(z.literal("")),
-  serviceAreas: z.array(z.object({
-    name: z.string(),
-    city: z.string().optional().nullable(),
-    radiusMiles: z.number().max(50, "SAB radius cannot typically exceed 50 miles on Google Maps").optional().nullable(),
-    isPrimary: z.boolean().optional(),
-  })).max(20, "Google Business Profile only allows up to 20 service areas").optional().nullable(),
-}).superRefine((data, ctx) => {
-  const hasAddress = !!data.address && data.address.trim() !== "";
-  const hasServiceAreas = data.serviceAreas && data.serviceAreas.length > 0;
+export function containsListedName(
+  text: string | null | undefined,
+  names: Array<string | null | undefined>,
+) {
+  if (!text) return false;
+  const normalizedText = text.toLowerCase();
 
-  if (!hasAddress && !hasServiceAreas) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Service areas are required when no physical address is provided (SAB).",
-      path: ["serviceAreas"],
-    });
+  return names.some((name) => {
+    const normalizedName = name?.trim().toLowerCase();
+    return (
+      !!normalizedName &&
+      normalizedName.length >= 3 &&
+      normalizedText.includes(normalizedName)
+    );
+  });
+}
+
+export function hasKeywordStuffedBusinessName(
+  name: string,
+  legalName?: string | null,
+) {
+  if (
+    legalName &&
+    name.trim().toLowerCase() === legalName.trim().toLowerCase()
+  ) {
+    return false;
   }
-});
+
+  return /(?:\s-\s|\s\|\s|\s:\s|\sin\s|\snear\s)/i.test(name);
+}
+
+export const createClientSchema = z
+  .object({
+    name: z.string().min(3, "Name must be at least 3 characters"),
+    businessName: z.string().optional().nullable(),
+    phone: z
+      .string()
+      .regex(
+        /^\+?[1-9]\d{1,14}$/,
+        "Phone must be in valid E.164 format (e.g., +1234567890)",
+      )
+      .optional()
+      .nullable()
+      .or(z.literal("")),
+    email: z.string().email().optional().nullable().or(z.literal("")),
+    website: safeUrlOptionalSchema,
+    address: z.string().optional().nullable(),
+    city: z.string().optional().nullable(),
+    state: z.string().optional().nullable(),
+    country: z.string().optional().nullable(),
+    postalCode: z
+      .string()
+      .regex(/^\d{5}(-\d{4})?$/, "Must be a valid US zip code")
+      .optional()
+      .nullable()
+      .or(z.literal("")),
+    type: z
+      .enum(["SERVICE_AREA_BUSINESS", "STOREFRONT_BUSINESS"])
+      .optional()
+      .nullable(),
+    notes: z.string().optional().nullable(),
+    legalName: z.string().trim().min(1, "Legal business name is required"),
+    serviceList: z.string().trim().min(1, "Service list is required"),
+    whatsapp: z.string().optional().nullable().or(z.literal("")),
+    existingGbpLoginDetails: z
+      .string()
+      .trim()
+      .min(1, "Existing GBP/login access details are required"),
+    pastSuspensions: z.enum(["YES", "NO", "UNKNOWN"], {
+      message: "Past suspension history is required",
+    }),
+    photoAvailability: z
+      .string()
+      .trim()
+      .min(1, "Photo availability is required"),
+    usps: z.string().trim().min(1, "USPs are required"),
+    bookingSystem: z.string().trim().min(1, "Booking system is required"),
+    primaryCategory: z.string().optional().nullable(),
+    secondaryCategories: z.string().optional().nullable(),
+    gbpDescription: z
+      .string()
+      .max(
+        750,
+        "Google Business Profile descriptions are limited to 750 characters",
+      )
+      .optional()
+      .nullable(),
+    businessHours: z.string().trim().min(1, "Business hours are required"),
+    gbpMapUrl: z
+      .string()
+      .url("Must be a valid Google Maps URL")
+      .regex(/google\.com\/maps/, "Must be a Google Maps link")
+      .optional()
+      .nullable()
+      .or(z.literal("")),
+    serviceAreas: z
+      .array(
+        z.object({
+          name: z.string(),
+          city: z.string().optional().nullable(),
+          radiusMiles: z
+            .number()
+            .max(
+              50,
+              "SAB radius cannot typically exceed 50 miles on Google Maps",
+            )
+            .optional()
+            .nullable(),
+          isPrimary: z.boolean().optional(),
+        }),
+      )
+      .max(20, "Google Business Profile only allows up to 20 service areas")
+      .optional()
+      .nullable(),
+  })
+  .superRefine((data, ctx) => {
+    const hasAddress = !!data.address && data.address.trim() !== "";
+    const hasServiceAreas = data.serviceAreas && data.serviceAreas.length > 0;
+
+    if (!hasAddress && !hasServiceAreas) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Service areas are required when no physical address is provided (SAB).",
+        path: ["serviceAreas"],
+      });
+    }
+  });
 
 export const updateClientSettingsSchema = z.object({
   businessName: z.string().optional().nullable(),
@@ -113,16 +211,39 @@ export const createTaskSchema = z.object({
   clientId: z.string().optional().nullable(),
   module: z.string().min(1, "Module is required"),
   priority: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]).optional(),
-  status: z.enum(["NOT_STARTED", "IN_PROGRESS", "PENDING_APPROVAL", "DONE", "FAILED", "BLOCKED", "DEFERRED"]).optional(),
+  status: z
+    .enum([
+      "NOT_STARTED",
+      "IN_PROGRESS",
+      "PENDING_APPROVAL",
+      "DONE",
+      "FAILED",
+      "BLOCKED",
+      "DEFERRED",
+    ])
+    .optional(),
   assignedToId: z.string().optional().nullable(),
   dueDate: z.string().datetime().optional().nullable(),
   scheduledFor: z.string().datetime().optional().nullable(),
   sprint: z.number().optional().nullable(),
+  dependsOnTaskIds: z.array(z.string().min(1)).optional(),
 });
 
 export const createLeadSchema = z.object({
   clientId: z.string().min(1, "Client ID is required"),
-  source: z.enum(["GBP_CALL", "GBP_DIRECTIONS", "GBP_WEBSITE", "FORM_SUBMISSION", "PHONE_CALL", "WHATSAPP", "EMAIL", "ORGANIC_SEARCH", "REFERRAL", "OTHER"]),
+  source: z.enum([
+    "GBP_CALL",
+    "GBP_DIRECTIONS",
+    "GBP_WEBSITE",
+    "FORM_SUBMISSION",
+    "BOOKING",
+    "PHONE_CALL",
+    "WHATSAPP",
+    "EMAIL",
+    "ORGANIC_SEARCH",
+    "REFERRAL",
+    "OTHER",
+  ]),
   value: z.number().optional().nullable(),
   contactInfo: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
@@ -133,54 +254,101 @@ export const updateGbpProfileSchema = z.object({
   gbpAccountId: z.string().optional().nullable(),
   gbpLocationId: z.string().optional().nullable(),
   primaryCategory: z.string().optional().nullable(),
-  secondaryCategories: z.string().optional().nullable().refine((val) => {
-    if (!val) return true;
-    try {
-      const arr = JSON.parse(val);
-      return Array.isArray(arr) ? arr.length <= 9 : true;
-    } catch {
-      return true; // Not JSON, skip this validation
-    }
-  }, { message: "Secondary categories limit exceeded (Max 9)." }),
-  description: z.string().max(750, "Description exceeds 750 characters limit.")
+  secondaryCategories: z
+    .string()
     .optional()
     .nullable()
-    .refine((val) => {
-      if (!val) return true;
-      const hasUrl = /(https?:\/\/[^\s]+)|(www\.[^\s]+)/i.test(val);
-      const hasPhone = /\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/.test(val);
-      const letters = val.replace(/[^a-zA-Z]/g, '');
-      const isAllCaps = letters.length > 10 && letters === letters.toUpperCase();
-      return !hasUrl && !hasPhone && !isAllCaps;
-    }, { message: "Description cannot contain URLs, phone numbers, or be strictly ALL-CAPS text." }),
+    .refine(
+      (val) => {
+        if (!val) return true;
+        try {
+          const arr = JSON.parse(val);
+          return Array.isArray(arr) ? arr.length <= 9 : true;
+        } catch {
+          return true; // Not JSON, skip this validation
+        }
+      },
+      { message: "Secondary categories limit exceeded (Max 9)." },
+    ),
+  description: z
+    .string()
+    .max(750, "Description exceeds 750 characters limit.")
+    .optional()
+    .nullable()
+    .refine(
+      (val) => {
+        if (!val) return true;
+        const hasUrl = /(https?:\/\/[^\s]+)|(www\.[^\s]+)/i.test(val);
+        const hasPhone = /\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/.test(val);
+        const letters = val.replace(/[^a-zA-Z]/g, "");
+        const isAllCaps =
+          letters.length > 10 && letters === letters.toUpperCase();
+        return !hasUrl && !hasPhone && !isAllCaps;
+      },
+      {
+        message:
+          "Description cannot contain URLs, phone numbers, or be strictly ALL-CAPS text.",
+      },
+    ),
   phone: z.string().optional().nullable(),
   websiteUrl: safeUrlOptionalSchema,
   bookingUrl: safeUrlOptionalSchema,
   bookingUrlOverrideNote: z.string().optional().nullable(),
 });
 
-export const gbpServiceSchema = z.object({
+const gbpServiceBaseSchema = z.object({
   name: z.string().min(1, "Service name is required"),
-  description: z.string().optional().nullable(),
+  description: z
+    .string()
+    .max(300, "Service descriptions are limited to 300 characters")
+    .optional()
+    .nullable(),
   price: z.number().optional().nullable(),
   isPriceConfirmed: z.boolean().optional().nullable(),
-}).refine((data) => {
+});
+
+function hasConfirmedPrice(data: {
+  price?: number | null;
+  isPriceConfirmed?: boolean | null;
+}) {
   if (data.price && data.price > 0) {
     return data.isPriceConfirmed === true;
   }
   return true;
-}, { message: "Price confirmations must be strictly enforced before saving.", path: ["isPriceConfirmed"] });
+}
 
-export const gbpProductSchema = z.object({
+export const gbpServiceSchema = gbpServiceBaseSchema.refine(hasConfirmedPrice, {
+  message: "Price confirmations must be strictly enforced before saving.",
+  path: ["isPriceConfirmed"],
+});
+
+export const updateGbpServiceSchema = gbpServiceBaseSchema
+  .partial()
+  .refine(hasConfirmedPrice, {
+    message: "Price confirmations must be strictly enforced before saving.",
+    path: ["isPriceConfirmed"],
+  });
+
+const gbpProductBaseSchema = z.object({
   name: z.string().min(1, "Product name is required"),
   description: z.string().optional().nullable(),
-  category: z.string().optional().nullable(),
+  category: z
+    .string()
+    .min(1, "Product must be linked to an existing service category"),
   price: z.number().optional().nullable(),
   url: safeUrlOptionalSchema,
 });
 
+export const gbpProductSchema = gbpProductBaseSchema;
+export const updateGbpProductSchema = gbpProductBaseSchema.partial();
+
 export const updateClientNotesSchema = z.object({
-  notes: z.string().min(1, "Notes must be a valid string").optional().nullable().or(z.literal("")),
+  notes: z
+    .string()
+    .min(1, "Notes must be a valid string")
+    .optional()
+    .nullable()
+    .or(z.literal("")),
 });
 
 export const updateClientStateSchema = z.object({

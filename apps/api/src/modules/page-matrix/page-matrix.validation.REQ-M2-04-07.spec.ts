@@ -52,7 +52,7 @@ describe('PageMatrix Validations & Checklist (REQ-M2-04 to REQ-M2-07)', () => {
       });
 
       expect(() => service.validateTemplateBlocks(content)).toThrow(
-        'Mandatory content block missing: real jobs.'
+        'Mandatory content block missing: real jobs.',
       );
     });
 
@@ -80,7 +80,7 @@ describe('PageMatrix Validations & Checklist (REQ-M2-04 to REQ-M2-07)', () => {
         geo: { latitude: 10, longitude: 20 },
       });
       expect(() => service.validateSchemaJson(schema)).toThrow(
-        'Schema @context must be schema.org.'
+        'Schema @context must be schema.org.',
       );
     });
 
@@ -93,7 +93,7 @@ describe('PageMatrix Validations & Checklist (REQ-M2-04 to REQ-M2-07)', () => {
         address: {},
       });
       expect(() => service.validateSchemaJson(schema)).toThrow(
-        'Schema geographic coordinates (geo.latitude, geo.longitude) are required.'
+        'Schema geographic coordinates (geo.latitude, geo.longitude) are required.',
       );
     });
 
@@ -125,7 +125,8 @@ describe('PageMatrix Validations & Checklist (REQ-M2-04 to REQ-M2-07)', () => {
         slug: 'test-slug',
         pageType: 'LOCATION_PAGE',
         primaryKeyword: 'plumber',
-        content: '<title>Plumber Page</title><h1>Plumber H1</h1>viewport analytics intro services real jobs review excerpts logistics faqs', // misses NAP strings
+        content:
+          '<title>Plumber Page</title><h1>Plumber H1</h1>viewport analytics intro services real jobs review excerpts logistics faqs', // misses NAP strings
         schemaJson: JSON.stringify({
           '@context': 'https://schema.org',
           '@type': 'LocalBusiness',
@@ -139,7 +140,7 @@ describe('PageMatrix Validations & Checklist (REQ-M2-04 to REQ-M2-07)', () => {
       (prisma.pageMatrixEntry.findMany as jest.Mock).mockResolvedValue([]);
 
       await expect(
-        service.updateEntry('client1', 'entry1', { status: 'PUBLISHED' })
+        service.updateEntry('client1', 'entry1', { status: 'PUBLISHED' }),
       ).rejects.toThrow('Pre-launch checklist failed.');
     });
 
@@ -157,7 +158,8 @@ describe('PageMatrix Validations & Checklist (REQ-M2-04 to REQ-M2-07)', () => {
         slug: 'test-slug',
         pageType: 'LOCATION_PAGE',
         primaryKeyword: 'plumber',
-        content: '<title>Plumber</title><h1>Plumber</h1> Plumber Pro 1234567890 123 Main St viewport analytics intro services real jobs review excerpts logistics faqs',
+        content:
+          '<title>Plumber</title><h1>Plumber</h1> Plumber Pro 1234567890 123 Main St viewport analytics intro services real jobs review excerpts logistics faqs',
         schemaJson: JSON.stringify({
           '@context': 'https://schema.org',
           '@type': 'LocalBusiness',
@@ -174,21 +176,30 @@ describe('PageMatrix Validations & Checklist (REQ-M2-04 to REQ-M2-07)', () => {
         status: 'PUBLISHED',
       });
 
-      const result = await service.updateEntry('client1', 'entry1', { status: 'PUBLISHED' });
+      const result = await service.updateEntry('client1', 'entry1', {
+        status: 'PUBLISHED',
+      });
       expect(result.status).toBe('PUBLISHED');
     });
   });
 
   describe('trackConversion', () => {
     it('should create a LeadLogEntry on tracked quote form submission', async () => {
-      (prisma.client.findUnique as jest.Mock).mockResolvedValue({ id: 'client1' });
+      (prisma.client.findUnique as jest.Mock).mockResolvedValue({
+        id: 'client1',
+      });
       (prisma.leadLogEntry.create as jest.Mock).mockResolvedValue({
         id: 'lead1',
         clientId: 'client1',
         source: 'FORM_SUBMISSION',
       });
 
-      const result = await service.trackConversion('client1', 'FORM_SUBMISSION', 50.0, 'user@example.com');
+      const result = await service.trackConversion(
+        'client1',
+        'FORM_SUBMISSION',
+        50.0,
+        'user@example.com',
+      );
       expect(result.source).toBe('FORM_SUBMISSION');
       expect(prisma.leadLogEntry.create).toHaveBeenCalledWith({
         data: {
@@ -201,9 +212,11 @@ describe('PageMatrix Validations & Checklist (REQ-M2-04 to REQ-M2-07)', () => {
     });
 
     it('should throw BadRequestException if source enum is invalid', async () => {
-      (prisma.client.findUnique as jest.Mock).mockResolvedValue({ id: 'client1' });
+      (prisma.client.findUnique as jest.Mock).mockResolvedValue({
+        id: 'client1',
+      });
       await expect(
-        service.trackConversion('client1', 'INVALID_SOURCE')
+        service.trackConversion('client1', 'INVALID_SOURCE'),
       ).rejects.toThrow('Invalid conversion source');
     });
   });

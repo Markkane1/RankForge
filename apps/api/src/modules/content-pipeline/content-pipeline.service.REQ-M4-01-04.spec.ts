@@ -88,32 +88,27 @@ describe('ContentPipelineService (REQ-M4-01 to REQ-M4-04)', () => {
           title: 'New Post',
           content: 'Check out our services.',
           scheduledAt: pastDate.toISOString(),
-        })
+        }),
       ).rejects.toThrow('Scheduled date must be in the future');
     });
   });
 
   describe('generateContentDraft (REQ-M4-02)', () => {
-    it('should return a generated draft if it passes validation rules', async () => {
+    const oldOpenAiKey = process.env.OPENAI_API_KEY;
+
+    afterEach(() => {
+      process.env.OPENAI_API_KEY = oldOpenAiKey;
+    });
+
+    it('should block content generation instead of returning synthetic copy', async () => {
       (prisma.client.findUnique as jest.Mock).mockResolvedValue({
         id: 'client1',
         websiteUri: 'https://site.com',
       });
 
-      const result = await service.generateContentDraft('client1', 'roof repairs', ['roofing']);
-      expect(result.content).toContain('roof repairs');
-      expect(result.content.length).toBeLessThanOrEqual(750);
-    });
-
-    it('should fail draft check if a keyword is stuffed too many times', async () => {
-      (prisma.client.findUnique as jest.Mock).mockResolvedValue({
-        id: 'client1',
-      });
-
-      // Stuff keyword 'home' multiple times in topic to triggerstuffing
       await expect(
-        service.generateContentDraft('client1', 'roof repairs home home home home', ['home'])
-      ).rejects.toThrow('Draft compliance failed');
+        service.generateContentDraft('client1', 'roof repairs', ['roofing']),
+      ).rejects.toThrow('Content generation is not implemented/configured.');
     });
   });
 
@@ -124,7 +119,10 @@ describe('ContentPipelineService (REQ-M4-01 to REQ-M4-04)', () => {
         businessName: 'Roof Masters',
       });
 
-      const result = await service.syncSearchVisibility('client1', 'roofing services');
+      const result = await service.syncSearchVisibility(
+        'client1',
+        'roofing services',
+      );
       expect(result.clientName).toBe('Roof Masters');
       expect(result.visibilityScore).toBeDefined();
     });

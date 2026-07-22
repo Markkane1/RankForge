@@ -22,17 +22,36 @@ class CustomAuthError extends CredentialsSignin {
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   adapter: PrismaAdapter(db),
+  // REQ-AUTH-01: Staff owner login runs through Auth.js credentials/email providers.
   session: {
     strategy: 'jwt',
     maxAge: 12 * 60 * 60, // 12 hours idle timeout natively
   },
+  cookies: {
+    sessionToken: {
+      name:
+        process.env.NODE_ENV === 'production'
+          ? '__Secure-authjs.session-token'
+          : 'authjs.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+  },
   // ─── Security: require NEXTAUTH_SECRET in all environments ───
   secret: env.NEXTAUTH_SECRET,
   providers: [
-    Nodemailer({
-      server: process.env.EMAIL_SERVER || 'smtp://placeholder:placeholder@smtp.example.com:587',
-      from: process.env.EMAIL_FROM || 'noreply@rankforge.app',
-    }),
+    ...(process.env.EMAIL_SERVER && process.env.EMAIL_FROM
+      ? [
+          Nodemailer({
+            server: process.env.EMAIL_SERVER,
+            from: process.env.EMAIL_FROM,
+          }),
+        ]
+      : []),
     CredentialsProvider({
       id: 'credentials',
       name: 'Credentials',
@@ -72,6 +91,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             email: true,
             name: true,
             role: true,
+            organizationId: true,
             passwordHash: true,
             isActive: true,
             twoFactorEnabled: true,
@@ -161,6 +181,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.name,
           email: user.email,
           role: user.role,
+          organizationId: user.organizationId,
           twoFactorEnabled: user.twoFactorEnabled,
           twoFactorVerified: requires2FA ? false : true,
         };

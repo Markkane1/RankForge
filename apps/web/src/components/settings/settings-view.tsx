@@ -262,7 +262,6 @@ function TwoFactorCard() {
               <div className="space-y-4">
                 {qrCode && (
                   <div className="flex justify-center">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={qrCode} alt="2FA QR Code" className="h-48 w-48 rounded-lg border" />
                   </div>
                 )}

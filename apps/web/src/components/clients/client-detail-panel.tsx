@@ -92,6 +92,7 @@ const stateColor: Record<string, string> = {
   GROWTH: 'bg-emerald-100 text-emerald-700 border-emerald-200',
   AT_RISK: 'bg-red-100 text-red-700 border-red-200',
   PAUSED: 'bg-purple-100 text-purple-700 border-purple-200',
+  OFFBOARDED: 'bg-gray-100 text-gray-600 border-gray-200',
 };
 
 const stateLabel: Record<string, string> = {
@@ -100,6 +101,7 @@ const stateLabel: Record<string, string> = {
   GROWTH: 'Growth',
   AT_RISK: 'At Risk',
   PAUSED: 'Paused',
+  OFFBOARDED: 'Offboarded',
 };
 
 const typeLabel: Record<string, string> = {
@@ -108,14 +110,15 @@ const typeLabel: Record<string, string> = {
 };
 
 const LEGAL_TRANSITIONS: Record<string, ClientState[]> = {
-  ONBOARDING: ['BUILD'],
-  BUILD: ['GROWTH'],
-  GROWTH: ['AT_RISK'],
+  ONBOARDING: ['BUILD', 'PAUSED'],
+  BUILD: ['GROWTH', 'AT_RISK', 'PAUSED'],
+  GROWTH: ['AT_RISK', 'PAUSED'],
   AT_RISK: ['GROWTH', 'PAUSED'],
-  PAUSED: ['BUILD'],
+  PAUSED: ['ONBOARDING', 'BUILD', 'GROWTH', 'AT_RISK', 'OFFBOARDED'],
+  OFFBOARDED: [],
 };
 
-const STATES_ORDER: ClientState[] = ['ONBOARDING', 'BUILD', 'GROWTH', 'AT_RISK', 'PAUSED'];
+const STATES_ORDER: ClientState[] = ['ONBOARDING', 'BUILD', 'GROWTH', 'AT_RISK', 'PAUSED', 'OFFBOARDED'];
 
 const priorityOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 const priorityColor: Record<string, string> = {

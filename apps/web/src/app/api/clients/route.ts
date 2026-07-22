@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ClientState, ClientType } from "@rankforge/database";
 import { requireSession, requireRole } from "@/lib/auth-guard";
+import { requireApproval } from "@/lib/approval-guard";
 import { createClientSchema } from "@/lib/validations";
 
 export async function GET(request: NextRequest) {
@@ -40,7 +41,7 @@ export async function GET(request: NextRequest) {
       skip,
       take,
       include: {
-        gbpProfile: {
+        gbpProfiles: {
           include: {
             reviews: { select: { rating: true } },
           },
@@ -53,7 +54,7 @@ export async function GET(request: NextRequest) {
 
     // Compute review aggregate and task counts by status
     const enriched = clients.map((client) => {
-      const { tasks, gbpProfile, ...rest } = client;
+      const { tasks, gbpProfiles, ...rest } = client;
 
       // Task counts by status
       const taskCounts: Record<string, number> = {};
@@ -63,6 +64,7 @@ export async function GET(request: NextRequest) {
 
       // GBP review stats
       let gbpProfileData: Record<string, unknown> | null = null;
+      const gbpProfile = gbpProfiles[0] ?? null;
       if (gbpProfile) {
         const { reviews, ...profileRest } = gbpProfile;
         const ratings = reviews.map((r) => r.rating);
@@ -109,6 +111,9 @@ import { rateLimitSensitive } from "@/lib/rate-limit";
 import { getSignInIp } from "@/lib/crypto";
 
 export async function POST(request: NextRequest) {
+  const auth = await requireRole('OWNER', 'COORDINATOR');
+  if (!auth.ok) return auth.response;
+
   try {
     const ip = getSignInIp(request);
     const rl = await rateLimitSensitive(ip, 'create_client');
@@ -127,19 +132,54 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    const { name, businessName, phone, email, website, address, city, state, country, postalCode, type, notes, primaryCategory, secondaryCategories, gbpDescription, businessHours, serviceAreas } = parsed.data;
+    const {
+      name,
+      businessName,
+      phone,
+      email,
+      website,
+      address,
+      city,
+      state,
+      country,
+      postalCode,
+      type,
+      notes,
+      legalName,
+      serviceList,
+      whatsapp,
+      existingGbpLoginDetails,
+      pastSuspensions,
+      photoAvailability,
+      usps,
+      bookingSystem,
+      primaryCategory,
+      secondaryCategories,
+      gbpDescription,
+      businessHours,
+      serviceAreas,
+    } = parsed.data;
 
     // Validate type if provided
     const clientType = type && Object.values(ClientType).includes(type as ClientType)
       ? (type as ClientType)
       : ClientType.SERVICE_AREA_BUSINESS;
 
+    const org = await db.organization.findFirst();
+    if (!org) {
+      return NextResponse.json(
+        { error: "No organization found" },
+        { status: 500 }
+      );
+    }
+
     // ─── Conflict of Interest Scanner (`REQ-M6-06`) ───
     if (primaryCategory) {
       const overlappingClients = await db.client.findMany({
         where: {
           isActive: true,
-          gbpProfile: { primaryCategory },
+          organizationId: org.id,
+          gbpProfiles: { some: { primaryCategory } },
         },
         include: { serviceAreas: true }
       });
@@ -159,9 +199,32 @@ export async function POST(request: NextRequest) {
         }
 
         if (isConflict) {
+          const approval = await requireApproval(db, {
+            title: `Conflict review: ${name}`,
+            description: `Potential conflict with ${existing.name} in ${primaryCategory}.`,
+            requestType: "CONFLICT_OF_INTEREST",
+            requestData: {
+              incoming: { name, businessName, primaryCategory, city, serviceAreas },
+              existing: {
+                id: existing.id,
+                name: existing.name,
+                city: existing.city,
+                serviceAreas: existing.serviceAreas.map((sa) => ({
+                  name: sa.name,
+                  city: sa.city,
+                  radiusMiles: sa.radiusMiles,
+                })),
+              },
+            },
+            requestedById: auth.user.id,
+          });
+
           return NextResponse.json(
-            { error: `Conflict of Interest: You already have an active client (${existing.name}) in the ${primaryCategory} niche operating in this service area.` },
-            { status: 409 }
+            {
+              error: `Conflict of Interest: approval required before onboarding ${name}.`,
+              approvalId: approval.id,
+            },
+            { status: 202 }
           );
         }
       }
@@ -173,15 +236,6 @@ export async function POST(request: NextRequest) {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
-
-    // Get first organization
-    const org = await db.organization.findFirst();
-    if (!org) {
-      return NextResponse.json(
-        { error: "No organization found" },
-        { status: 500 }
-      );
-    }
 
     // Create client with initial GBP profile
     const client = await db.client.create({
@@ -200,9 +254,21 @@ export async function POST(request: NextRequest) {
         type: clientType,
         lifecycleState: "ONBOARDING",
         notes: notes || null,
+        intakeData: JSON.stringify({
+          legalName,
+          serviceList: serviceList.split(",").map((item) => item.trim()).filter(Boolean),
+          whatsapp: whatsapp || null,
+          existingGbpLoginDetails,
+          pastSuspensions,
+          photoAvailability,
+          usps,
+          bookingSystem,
+          businessHours,
+          serviceAreaBusiness: clientType === ClientType.SERVICE_AREA_BUSINESS,
+        }),
         isActive: true,
         organizationId: org.id,
-        gbpProfile: {
+        gbpProfiles: {
           create: {
             primaryCategory: primaryCategory || null,
             secondaryCategories: secondaryCategories || null,
@@ -235,13 +301,14 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const { tasks, gbpProfile, ...rest } = client;
+    const { tasks, gbpProfiles, ...rest } = client;
     const taskCounts: Record<string, number> = {};
     for (const task of tasks) {
       taskCounts[task.status] = (taskCounts[task.status] || 0) + 1;
     }
 
     let gbpProfileData: Record<string, unknown> | null = null;
+    const gbpProfile = gbpProfiles[0] ?? null;
     if (gbpProfile) {
       const { reviews, ...profileRest } = gbpProfile;
       gbpProfileData = {

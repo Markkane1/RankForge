@@ -8,6 +8,8 @@ export class TasksService {
     const job = await taskQueue.add(taskName, data, {
       removeOnComplete: true,
       removeOnFail: false,
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 5000 },
     });
     return { jobId: job.id };
   }

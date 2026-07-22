@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireRole } from "@/lib/auth-guard";
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireRole('OWNER', 'COORDINATOR');
+    if (!auth.ok) return auth.response;
+
     const { id: taskId } = await params;
     const body = await request.json();
     const { subtaskIds } = body as { subtaskIds: string[] };

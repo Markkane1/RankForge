@@ -3,7 +3,11 @@ import crypto from 'crypto';
 import { rateLimitWebhook } from '@/lib/rate-limit';
 import { taskQueue } from '@rankforge/queue';
 
-const META_WEBHOOK_SECRET = process.env.META_WEBHOOK_SECRET || 'fallback_secret_do_not_use_in_prod';
+function getMetaWebhookSecret() {
+  const secret = process.env.META_WEBHOOK_SECRET;
+  if (!secret) throw new Error('META_WEBHOOK_SECRET is required');
+  return secret;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,7 +31,7 @@ export async function POST(request: NextRequest) {
     const rawBody = await request.text();
 
     const expectedSignature = `sha256=${crypto
-      .createHmac('sha256', META_WEBHOOK_SECRET)
+      .createHmac('sha256', getMetaWebhookSecret())
       .update(rawBody)
       .digest('hex')}`;
 
@@ -81,7 +85,7 @@ export async function GET(request: NextRequest) {
   const token = searchParams.get('hub.verify_token');
   const challenge = searchParams.get('hub.challenge');
 
-  if (mode === 'subscribe' && token === META_WEBHOOK_SECRET) {
+  if (mode === 'subscribe' && token === getMetaWebhookSecret()) {
     return new NextResponse(challenge, { status: 200 });
   }
 

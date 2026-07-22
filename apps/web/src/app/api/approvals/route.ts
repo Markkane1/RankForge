@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ApprovalStatus } from "@rankforge/database";
-import { requireSession } from "@/lib/auth-guard";
+import { requireRole, requireSession } from "@/lib/auth-guard";
+import { requireApproval } from "@/lib/approval-guard";
 
 export async function POST(request: NextRequest) {
-  const auth = await requireSession();
+  const auth = await requireRole("OWNER", "COORDINATOR");
   if (!auth.ok) return auth.response;
 
   try {
@@ -33,21 +34,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get first staff user as requester
-    const firstStaff = await db.staffUser.findFirst({ where: { isActive: true }, orderBy: { createdAt: "asc" } });
-    const requestedById = firstStaff?.id ?? "system";
-
-    const approval = await db.approvalRequest.create({
-      data: {
-        clientId: clientId || null,
-        taskId: taskId || null,
-        title: title.trim(),
-        description: description.trim(),
-        requestType: requestType.trim(),
-        requestData: requestData?.trim() || null,
-        status: "PENDING",
-        requestedById,
-      },
+    const approval = await requireApproval(db, {
+      clientId,
+      taskId,
+      title,
+      description,
+      requestType,
+      requestData: requestData?.trim() || null,
+      requestedById: auth.user.id,
       include: {
         client: { select: { name: true } },
         requestedBy: { select: { name: true, role: true } },

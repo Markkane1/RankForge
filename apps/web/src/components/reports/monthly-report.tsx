@@ -167,6 +167,10 @@ interface ClientRow {
   tasksDone: number;
   leads: number;
   avgRating: number | null;
+  searchVisibility?: number;
+  competitorPosition?: string;
+  nextMonthPlan?: string;
+  whatsappSummary?: string;
 }
 
 interface LeadSourceData {
@@ -301,6 +305,7 @@ export function MonthlyReportDocument({
             <Text style={styles.tableHeaderCell}>Tasks Done</Text>
             <Text style={styles.tableHeaderCell}>Leads</Text>
             <Text style={styles.tableHeaderCell}>Avg Rating</Text>
+            <Text style={styles.tableHeaderCell}>Visibility</Text>
           </View>
           {clients.map((c, i) => (
             <View key={i} style={styles.tableRow}>
@@ -309,6 +314,19 @@ export function MonthlyReportDocument({
               <Text style={styles.tableCell}>{c.tasksDone}</Text>
               <Text style={styles.tableCell}>{c.leads}</Text>
               <Text style={styles.tableCell}>{c.avgRating != null ? c.avgRating.toFixed(1) : '—'}</Text>
+              <Text style={styles.tableCell}>{c.searchVisibility != null ? `${c.searchVisibility}%` : '—'}</Text>
+            </View>
+          ))}
+        </View>
+
+        <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Next Month Plan</Text>
+        <View style={styles.card}>
+          {clients.map((c) => (
+            <View key={c.name} style={{ marginBottom: 8 }}>
+              <Text style={{ fontSize: 9, fontWeight: 700 }}>{sanitizeText(c.name)}</Text>
+              <Text style={{ fontSize: 8, color: '#4b5563' }}>Competitor: {sanitizeText(c.competitorPosition)}</Text>
+              <Text style={{ fontSize: 8, color: '#4b5563' }}>{sanitizeText(c.whatsappSummary)}</Text>
+              <Text style={{ fontSize: 8, color: '#4b5563' }}>Plan: {sanitizeText(c.nextMonthPlan)}</Text>
             </View>
           ))}
         </View>

@@ -46,14 +46,19 @@ export async function POST(request: NextRequest) {
     const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
     const magicLink = `${baseUrl}/api/auth/magic-link/callback?token=${encodeURIComponent(token)}`;
 
-    // Print magic link to terminal/logs for seamless development testing
-    console.log(`[MAGIC LINK EMAIL SPREAD] To: ${emailTrimmed} | Link: ${magicLink}`);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[MAGIC LINK DEV] To: ${emailTrimmed} | Link: ${magicLink}`);
+    }
 
-    return NextResponse.json({
+    const response: Record<string, unknown> = {
       success: true,
-      message: "Magic link sent successfully. Please check your inbox (simulated in logs).",
-      link: magicLink, // return link so we can easily test or use it in tests
-    });
+      message: "Magic link created successfully.",
+    };
+    if (process.env.NODE_ENV !== "production") {
+      response.link = magicLink;
+    }
+
+    return NextResponse.json(response);
   } catch (error) {
     console.error("Magic link request error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

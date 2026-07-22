@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, withClientTenant } from "@/lib/db";
 import { pdf } from "@react-pdf/renderer";
 import React from "react";
 import { MonthlyReportDocument } from "@/components/reports/monthly-report";
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
       where.id = clientId;
     }
 
-    const clients = await db.client.findMany({
+    const findClients = (tenantDb: typeof db) => tenantDb.client.findMany({
       where,
       include: {
         gbpProfiles: {
@@ -63,7 +63,12 @@ export async function GET(request: NextRequest) {
         geoGridScans: {
           orderBy: { scanDate: "desc" },
           take: 1,
-          select: { averageRank: true }
+          select: { averageRank: true, keyword: true, sourceLineage: true }
+        },
+        competitors: {
+          orderBy: { analyzedAt: "desc" },
+          take: 1,
+          select: { competitorName: true, sourceLineage: true }
         },
         reports: {
           where: { 
@@ -76,6 +81,7 @@ export async function GET(request: NextRequest) {
         }
       },
     });
+    const clients = clientId ? await withClientTenant(clientId, findClients) : await findClients(db);
 
     // Aggregate data
     const leadSourceMap: Record<string, number> = {};
@@ -122,9 +128,12 @@ export async function GET(request: NextRequest) {
         });
 
         const citationCount = c.citations.length;
-        const searchVisibility = c.geoGridScans[0]
-          ? Math.max(0, Math.min(100, Number((100 - (c.geoGridScans[0].averageRank * 5)).toFixed(1))))
+        const latestGeoGridScan = c.geoGridScans[0] ?? null;
+        const topCompetitor = c.competitors[0] ?? null;
+        const searchVisibility = latestGeoGridScan
+          ? Math.max(0, Math.min(100, Number((100 - (latestGeoGridScan.averageRank * 5)).toFixed(1))))
           : 0.0;
+        const whatsappLeads = sourceCounts.WHATSAPP || 0;
 
         // Compute trends safely to prevent zero-activity NaN crashes
         const prevKpis = prevReport?.kpisJson ? JSON.parse(prevReport.kpisJson) : null;
@@ -158,7 +167,29 @@ export async function GET(request: NextRequest) {
           leadsTrend,
           tasksTrend,
           citationCount,
-          searchVisibility
+          searchVisibility,
+          competitorPosition: topCompetitor?.competitorName ?? null,
+          nextMonthPlan: tasksDone === 0
+            ? "Restart delivery cadence and complete at least one client-facing optimization task."
+            : searchVisibility < 50
+              ? "Prioritize geo-grid rank recovery and competitor gap work."
+              : "Maintain posting, review, and conversion optimization cadence.",
+          whatsappSummary: `${whatsappLeads} WhatsApp lead(s) logged this month.`,
+          metricLineage: {
+            tasksDone: "Task rows completed inside report month",
+            leads: "LeadLogEntry rows created inside report month",
+            leadValue: "Sum of LeadLogEntry.value inside report month",
+            avgRating: "GbpReview ratings across client GBP profiles",
+            sourceCounts: "LeadLogEntry.source grouped inside report month",
+            citationCount: "CitationRecord count for client",
+            searchVisibility: latestGeoGridScan
+              ? `Latest GeoGridScanResult averageRank for ${latestGeoGridScan.keyword}`
+              : "No GeoGridScanResult available",
+            competitorPosition: topCompetitor
+              ? "Latest CompetitorBenchmark row"
+              : "No CompetitorBenchmark available",
+            whatsappSummary: "LeadLogEntry rows with source WHATSAPP",
+          },
         };
 
         // 3. Persist Immutable Snapshot if the month is over
@@ -168,7 +199,7 @@ export async function GET(request: NextRequest) {
           const clientWebsite = sourceCounts['GBP_WEBSITE'] || 0;
           const clientHeadline = `You got ${clientCalls} calls, ${clientDirections} direction requests, and ${clientWebsite} website clicks this month!`;
 
-          await db.monthlyReport.create({
+          await withClientTenant(c.id, (tenantDb) => tenantDb.monthlyReport.create({
             data: {
               clientId: c.id,
               month,
@@ -176,7 +207,7 @@ export async function GET(request: NextRequest) {
               headline: clientHeadline,
               kpisJson: JSON.stringify(kpis)
             }
-          });
+          }));
         }
       }
 
@@ -200,7 +231,10 @@ export async function GET(request: NextRequest) {
         leadsTrend: kpis.leadsTrend || 0,
         tasksTrend: kpis.tasksTrend || 0,
         citationCount: kpis.citationCount || 0,
-        searchVisibility: kpis.searchVisibility || 0.0
+        searchVisibility: kpis.searchVisibility || 0.0,
+        competitorPosition: kpis.competitorPosition || "None recorded",
+        nextMonthPlan: kpis.nextMonthPlan || "Continue current delivery cadence.",
+        whatsappSummary: kpis.whatsappSummary || "0 WhatsApp lead(s) logged this month.",
       });
     }
 

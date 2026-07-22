@@ -61,9 +61,13 @@ export function GbpIntakeForm({ clientId, gbpId, initialData }: GbpIntakeFormPro
       bookingUrl: bookingUrl || undefined,
       bookingUrlOverrideNote: bookingUrlOverrideNote || undefined,
     }),
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['client', clientId] });
-      toast.success('GBP profile updated');
+      if (data?.warnings?.some((warning: any) => warning.code === 'BOOKING_URL_UNREACHABLE')) {
+        toast.warning('GBP profile updated with booking URL override note');
+      } else {
+        toast.success('GBP profile updated');
+      }
       setBookingUrlError(null);
     },
     onError: (err: any) => {

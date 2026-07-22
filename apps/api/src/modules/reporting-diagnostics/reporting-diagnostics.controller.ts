@@ -1,4 +1,13 @@
-import { Controller, Post, Get, Param, Query, Body, HttpStatus, HttpCode } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Param,
+  Query,
+  Body,
+  HttpStatus,
+  HttpCode,
+} from '@nestjs/common';
 import { ReportingDiagnosticsService } from './reporting-diagnostics.service';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 
@@ -13,14 +22,24 @@ export class ReportingDiagnosticsController {
   async syncGa4Events(
     @Param('id') clientId: string,
     @Body('propertyId') propertyId: string,
-    @Body('customDimensionConfig') customDimensionConfig?: string
+    @Body('customDimensionConfig') customDimensionConfig?: string,
   ) {
-    return this.reportingService.syncGa4Events(clientId, propertyId, customDimensionConfig);
+    return this.reportingService.syncGa4Events(
+      clientId,
+      propertyId,
+      customDimensionConfig,
+    );
   }
 
   @ApiOperation({ summary: 'Capture onboarding baseline snapshot' })
-  @ApiResponse({ status: 201, description: 'Baseline snapshot created successfully' })
-  @ApiResponse({ status: 400, description: 'Baseline snapshot already exists and is locked' })
+  @ApiResponse({
+    status: 201,
+    description: 'Baseline snapshot created successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Baseline snapshot already exists and is locked',
+  })
   @Post('baseline')
   async captureBaseline(@Param('id') clientId: string) {
     return this.reportingService.captureBaseline(clientId);

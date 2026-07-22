@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { withClientTenant } from "@/lib/db";
 import { requireRole } from "@/lib/auth-guard";
 
 export async function GET(
@@ -12,10 +12,12 @@ export async function GET(
   try {
     const { id: clientId, gbpId } = await params;
 
-    const posts = await db.gbpPost.findMany({
-      where: { gbpProfileId: gbpId, gbpProfile: { clientId } },
-      orderBy: { startDate: "asc" },
-    });
+    const posts = await withClientTenant(clientId, (tenantDb) =>
+      tenantDb.gbpPost.findMany({
+        where: { gbpProfileId: gbpId, gbpProfile: { clientId } },
+        orderBy: { startDate: "asc" },
+      })
+    );
 
     return NextResponse.json(posts);
   } catch (error) {

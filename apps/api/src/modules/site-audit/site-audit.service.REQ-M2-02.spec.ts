@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SiteAuditService } from './site-audit.service';
-import { BadRequestException, PreconditionFailedException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  PreconditionFailedException,
+  NotFoundException,
+} from '@nestjs/common';
 
 jest.mock('@rankforge/database', () => {
   return {
@@ -46,7 +50,7 @@ describe('SiteAuditService (REQ-M2-02)', () => {
       (prisma.siteRestorePoint.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(service.executeFix('client1', 'issue1')).rejects.toThrow(
-        PreconditionFailedException
+        PreconditionFailedException,
       );
       expect(prisma.siteRestorePoint.findFirst).toHaveBeenCalledWith({
         where: {
@@ -93,21 +97,27 @@ describe('SiteAuditService (REQ-M2-02)', () => {
       (prisma.siteAuditIssue.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.executeFix('client1', 'issue1')).rejects.toThrow(
-        NotFoundException
+        NotFoundException,
       );
     });
   });
 
   describe('createRestorePoint', () => {
     it('should create a restore point successfully', async () => {
-      (prisma.client.findUnique as jest.Mock).mockResolvedValue({ id: 'client1' });
+      (prisma.client.findUnique as jest.Mock).mockResolvedValue({
+        id: 'client1',
+      });
       (prisma.siteRestorePoint.create as jest.Mock).mockResolvedValue({
         id: 'rp1',
         clientId: 'client1',
         snapshotData: '{}',
       });
 
-      const result = await service.createRestorePoint('client1', '{}', 'Before write batch');
+      const result = await service.createRestorePoint(
+        'client1',
+        '{}',
+        'Before write batch',
+      );
       expect(result.snapshotData).toBe('{}');
       expect(prisma.siteRestorePoint.create).toHaveBeenCalledWith({
         data: {

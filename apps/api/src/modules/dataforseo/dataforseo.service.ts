@@ -8,40 +8,55 @@ export class DataforseoService {
   constructor(private credentialsService: CredentialsService) {}
 
   private async getAuthHeaders(organizationId: string) {
-    const credsStr = await this.credentialsService.getOrgCredential(organizationId, 'DATAFORSEO');
+    const credsStr = await this.credentialsService.getOrgCredential(
+      organizationId,
+      'DATAFORSEO',
+    );
     // Assuming credsStr is 'login:password'
     const encoded = Buffer.from(credsStr).toString('base64');
     return {
-      'Authorization': `Basic ${encoded}`,
-      'Content-Type': 'application/json'
+      Authorization: `Basic ${encoded}`,
+      'Content-Type': 'application/json',
     };
   }
 
-  async getKeywordRankings(organizationId: string, keyword: string, location: string) {
+  async getKeywordRankings(
+    organizationId: string,
+    keyword: string,
+    location: string,
+  ) {
     const headers = await this.getAuthHeaders(organizationId);
-    
+
     // Simplistic integration for demonstration
-    const postData = [{
-      keyword,
-      location_name: location,
-      language_name: 'English'
-    }];
+    const postData = [
+      {
+        keyword,
+        location_name: location,
+        language_name: 'English',
+      },
+    ];
 
     try {
-      const response = await fetch(`${this.apiUrl}/serp/google/organic/live/regular`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(postData)
-      });
-      
+      const response = await fetch(
+        `${this.apiUrl}/serp/google/organic/live/regular`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(postData),
+        },
+      );
+
       const data = await response.json();
       if (!response.ok) {
         throw new HttpException(data, response.status);
       }
-      
+
       return data;
     } catch (e) {
-      throw new HttpException('DataForSEO API Error', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        'DataForSEO API Error',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 }

@@ -1,3 +1,0 @@
-module.exports=[776908,a=>{"use strict";a.s(["appendUtmTags",0,function(a){if(!a)return null;try{let r=new URL(a);return r.searchParams.has("utm_source")||r.searchParams.set("utm_source","google"),r.searchParams.has("utm_medium")||r.searchParams.set("utm_medium","organic"),r.searchParams.has("utm_campaign")||r.searchParams.set("utm_campaign","gbp"),r.toString()}catch(r){return a}}])}];
-
-//# sourceMappingURL=apps_web_src_lib_utils_ts_0ms7t09._.js.map

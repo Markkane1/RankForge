@@ -442,7 +442,7 @@ export function ApprovalsView() {
   };
 
   // Count approvals by status
-  const counts: Record<string, number> = { PENDING: 0, APPROVED: 0, REJECTED: 0, CANCELLED: 0 };
+  const counts: Record<string, number> = { PENDING: 0, APPROVED: 0, REJECTED: 0, EXPIRED: 0, CANCELLED: 0 };
   allApprovals?.forEach((a) => {
     counts[a.status] = (counts[a.status] ?? 0) + 1;
   });
@@ -542,7 +542,7 @@ export function ApprovalsView() {
                   approval.status === 'PENDING' && 'border-l-4 border-l-amber-400 cursor-pointer',
                   approval.status === 'APPROVED' && 'border-l-4 border-l-emerald-500',
                   approval.status === 'REJECTED' && 'border-l-4 border-l-red-500',
-                  approval.status === 'CANCELLED' && 'border-l-4 border-l-gray-400',
+                  (approval.status === 'EXPIRED' || approval.status === 'CANCELLED') && 'border-l-4 border-l-gray-400',
                 )} onClick={approval.status === 'PENDING' ? () => handleApprove(approval) : undefined}>
                   <div className="flex flex-1">
                     {/* Left accent bar - 3px */}

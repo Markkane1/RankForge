@@ -5,7 +5,8 @@ export const LEGAL_TRANSITIONS: Record<ClientState, ClientState[]> = {
   BUILD: ['GROWTH', 'AT_RISK', 'PAUSED'],
   GROWTH: ['AT_RISK', 'PAUSED'],
   AT_RISK: ['GROWTH', 'PAUSED'],
-  PAUSED: ['ONBOARDING', 'BUILD', 'GROWTH', 'AT_RISK'],
+  PAUSED: ['ONBOARDING', 'BUILD', 'GROWTH', 'AT_RISK', 'OFFBOARDED'],
+  OFFBOARDED: [],
 };
 
 export class IllegalStateTransitionError extends Error {

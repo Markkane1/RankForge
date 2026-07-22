@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { prisma } from '@rankforge/database';
 
 @Injectable()
@@ -14,7 +18,7 @@ export class ContentPipelineService {
       eventType?: string;
       ctaButton?: string;
       ctaUrl?: string;
-    }
+    },
   ) {
     const profile = await prisma.gbpProfile.findUnique({
       where: { id: data.gbpProfileId },
@@ -74,7 +78,7 @@ export class ContentPipelineService {
       content?: string;
       scheduledAt?: string;
       status?: string;
-    }
+    },
   ) {
     const post = await prisma.gbpPost.findUnique({
       where: { id: postId },
@@ -85,7 +89,9 @@ export class ContentPipelineService {
       throw new NotFoundException('Post not found');
     }
 
-    const scheduledDate = data.scheduledAt ? new Date(data.scheduledAt) : undefined;
+    const scheduledDate = data.scheduledAt
+      ? new Date(data.scheduledAt)
+      : undefined;
     if (scheduledDate && isNaN(scheduledDate.getTime())) {
       throw new BadRequestException('Invalid scheduled date format');
     }
@@ -120,36 +126,14 @@ export class ContentPipelineService {
   async generateContentDraft(
     clientId: string,
     topic: string,
-    primaryKeywords: string[]
+    primaryKeywords: string[],
   ) {
     const client = await prisma.client.findUnique({ where: { id: clientId } });
     if (!client) throw new NotFoundException('Client not found');
 
-    // Simulate LLM draft text based on topic and keywords
-    const keywordStr = primaryKeywords.join(', ');
-    const mockContent = `Looking for top-notch local services in town? Our team specializes in ${topic} using standard methods. Contact us today to discuss your next ${primaryKeywords[0] || 'project'}. We guarantee professional workmanship and reliable results for every single home client. Call now!`;
-
-    // 1. Strict length limit filter (Google Post max 750 characters)
-    if (mockContent.length > 750) {
-      throw new BadRequestException('Draft compliance failed: Content exceeds 750 characters.');
-    }
-
-    // 2. Keyword stuffing linter
-    // Checks that no keyword occurs more than 3 times in the text
-    for (const keyword of primaryKeywords) {
-      const escaped = keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-      const matches = mockContent.match(new RegExp(`\\b${escaped}\\b`, 'gi'));
-      if (matches && matches.length > 3) {
-        throw new BadRequestException(`Draft compliance failed: Keyword "${keyword}" appears too many times (stuffing detected).`);
-      }
-    }
-
-    return {
-      title: `Expert ${topic} Services`,
-      content: mockContent,
-      ctaButton: 'CALL',
-      ctaUrl: client.website ?? 'https://clientsite.com',
-    };
+    throw new BadRequestException(
+      'Content generation is not implemented/configured.',
+    );
   }
 
   // REQ-M4-03: GEO format checker & query checks
@@ -158,8 +142,10 @@ export class ContentPipelineService {
     if (!client) throw new NotFoundException('Client not found');
 
     // Simulate DataForSEO SERP pull/organic snippets scraper
-    const isMatchingSnippet = query.toLowerCase().includes('plumb') || query.toLowerCase().includes('clean');
-    
+    const isMatchingSnippet =
+      query.toLowerCase().includes('plumb') ||
+      query.toLowerCase().includes('clean');
+
     return {
       query,
       clientName: client.businessName,

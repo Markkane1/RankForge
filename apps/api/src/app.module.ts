@@ -26,7 +26,7 @@ import { TenantMiddleware } from './common/middleware/tenant.middleware';
     PageMatrixModule,
     LocalAuthorityModule,
     ContentPipelineModule,
-    ReportingDiagnosticsModule
+    ReportingDiagnosticsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth-guard";
+import { withClientTenant } from "@/lib/db";
+import { requireClientRole } from "@/lib/auth-guard";
 import { z } from "zod";
 
 const createFaqSchema = z.object({
@@ -12,14 +12,16 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { id: string; gbpId: string } }
 ) {
-  const auth = await requireSession();
-  if (!auth.ok) return auth.response;
-
   try {
-    const faqs = await db.gbpFaq.findMany({
-      where: { gbpProfileId: params.gbpId },
-      orderBy: { createdAt: "desc" },
-    });
+    const auth = await requireClientRole(params.id, "OWNER", "COORDINATOR", "VIEWER", "APPROVER");
+    if (!auth.ok) return auth.response;
+
+    const faqs = await withClientTenant(params.id, (tenantDb) =>
+      tenantDb.gbpFaq.findMany({
+        where: { gbpProfileId: params.gbpId, gbpProfile: { clientId: params.id } },
+        orderBy: { createdAt: "desc" },
+      })
+    );
 
     return NextResponse.json(faqs);
   } catch (error) {
@@ -32,23 +34,37 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string; gbpId: string } }
 ) {
-  const auth = await requireSession();
-  if (!auth.ok) return auth.response;
-
   try {
+    const auth = await requireClientRole(params.id, "OWNER", "COORDINATOR");
+    if (!auth.ok) return auth.response;
+
     const body = await request.json();
     const parsed = createFaqSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid input", details: parsed.error.format() }, { status: 400 });
     }
 
-    const faq = await db.gbpFaq.create({
-      data: {
-        gbpProfileId: params.gbpId,
-        question: parsed.data.question,
-        answer: parsed.data.answer,
-      },
+    const faq = await withClientTenant(params.id, async (tenantDb) => {
+      const profile = await tenantDb.gbpProfile.findUnique({
+        where: { id: params.gbpId, clientId: params.id },
+      });
+
+      if (!profile) {
+        return null;
+      }
+
+      return tenantDb.gbpFaq.create({
+        data: {
+          gbpProfileId: params.gbpId,
+          question: parsed.data.question,
+          answer: parsed.data.answer,
+        },
+      });
     });
+
+    if (!faq) {
+      return NextResponse.json({ error: "GBP profile not found" }, { status: 404 });
+    }
 
     return NextResponse.json(faq, { status: 201 });
   } catch (error) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { withClientTenant } from "@/lib/db";
 import { requireRole } from "@/lib/auth-guard";
 import { createKeywordSchema, updateKeywordSchema } from "@/lib/validations";
 
@@ -24,47 +24,51 @@ export async function POST(
 
     const { keyword, targetRank, priority } = parsed.data;
 
-    const client = await db.client.findUnique({ where: { id: clientId } });
+    const client = await withClientTenant(clientId, (tenantDb) =>
+      tenantDb.client.findUnique({ where: { id: clientId } })
+    );
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    // REQ-M1-05: Fetch real search volume from DataForSEO
-    let searchVolume = null;
-    try {
-      const { DataForSeoClient } = await import("@/lib/integrations/dataforseo");
-      const dataForSeo = new DataForSeoClient(client.organizationId);
-      await dataForSeo.init();
-      if (dataForSeo.isConnected) {
-        const result = await dataForSeo.getSearchVolume(keyword);
-        searchVolume = result.volume;
-      }
-    } catch (e) {
-      console.warn("DataForSEO fetch failed, falling back to null volume:", e);
+    const { DataForSeoClient } = await import("@/lib/integrations/dataforseo");
+    const dataForSeo = new DataForSeoClient(client.organizationId);
+    await dataForSeo.init();
+    if (!dataForSeo.isConnected) {
+      return NextResponse.json(
+        { error: "DataForSEO is required for live keyword research" },
+        { status: 424 },
+      );
     }
+    const keywordResearch = await dataForSeo.getSearchVolume(keyword);
 
-    const newKeyword = await db.keywordMapEntry.create({
-      data: {
-        clientId,
-        keyword,
-        targetRank,
-        searchVolume,
-        priority: priority ?? 5,
-        status: "ACTIVE",
-      },
-    });
+    const newKeyword = await withClientTenant(clientId, async (tenantDb) => {
+      const newKeyword = await tenantDb.keywordMapEntry.create({
+        data: {
+          clientId,
+          keyword,
+          targetRank,
+          searchVolume: keywordResearch.volume,
+          priority: priority ?? 5,
+          status: "ACTIVE",
+          sourceLineage: JSON.stringify(keywordResearch.sourceLineage),
+        },
+      });
 
-    await db.changeLogEntry.create({
-      data: {
-        clientId,
-        module: "M3",
-        entityType: "KeywordMapEntry",
-        entityId: newKeyword.id,
-        field: "creation",
-        oldValue: null,
-        newValue: keyword,
-        changedById: auth.user.id,
-      },
+      await tenantDb.changeLogEntry.create({
+        data: {
+          clientId,
+          module: "M3",
+          entityType: "KeywordMapEntry",
+          entityId: newKeyword.id,
+          field: "creation",
+          oldValue: null,
+          newValue: keyword,
+          changedById: auth.user.id,
+        },
+      });
+
+      return newKeyword;
     });
 
     return NextResponse.json(newKeyword, { status: 201 });
@@ -95,34 +99,40 @@ export async function PATCH(
 
     const { keywordId, targetRank, priority, status } = parsed.data;
 
-    const existing = await db.keywordMapEntry.findUnique({
-      where: { id: keywordId },
-    });
+    const existing = await withClientTenant(clientId, (tenantDb) =>
+      tenantDb.keywordMapEntry.findUnique({
+        where: { id: keywordId },
+      })
+    );
 
     if (!existing || existing.clientId !== clientId) {
       return NextResponse.json({ error: "Keyword not found" }, { status: 404 });
     }
 
-    const updated = await db.keywordMapEntry.update({
-      where: { id: keywordId },
-      data: {
-        ...(targetRank !== undefined && { targetRank }),
-        ...(priority !== undefined && { priority }),
-        ...(status !== undefined && { status }),
-      },
-    });
+    const updated = await withClientTenant(clientId, async (tenantDb) => {
+      const updated = await tenantDb.keywordMapEntry.update({
+        where: { id: keywordId },
+        data: {
+          ...(targetRank !== undefined && { targetRank }),
+          ...(priority !== undefined && { priority }),
+          ...(status !== undefined && { status }),
+        },
+      });
 
-    await db.changeLogEntry.create({
-      data: {
-        clientId,
-        module: "M3",
-        entityType: "KeywordMapEntry",
-        entityId: keywordId,
-        field: "update",
-        oldValue: "PREVIOUS_STATE",
-        newValue: "UPDATED",
-        changedById: auth.user.id,
-      },
+      await tenantDb.changeLogEntry.create({
+        data: {
+          clientId,
+          module: "M3",
+          entityType: "KeywordMapEntry",
+          entityId: keywordId,
+          field: "update",
+          oldValue: "PREVIOUS_STATE",
+          newValue: "UPDATED",
+          changedById: auth.user.id,
+        },
+      });
+
+      return updated;
     });
 
     return NextResponse.json(updated);

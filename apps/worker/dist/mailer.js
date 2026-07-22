@@ -2,15 +2,20 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendStatusAlert = sendStatusAlert;
 const resend_1 = require("resend");
-// Initialize Resend with fallback for local dev
-const resend = new resend_1.Resend(process.env.RESEND_API_KEY || 're_dummy_key_123');
+function getResendClient() {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) {
+        throw new Error('RESEND_API_KEY is required to send status alerts.');
+    }
+    return new resend_1.Resend(apiKey);
+}
 /**
  * Service to send scheduled automated status alerts to clients
  */
 async function sendStatusAlert(toEmail, clientName, statusMessage) {
     try {
         console.log(`Preparing to send status alert to ${clientName} (${toEmail})`);
-        const data = await resend.emails.send({
+        const data = await getResendClient().emails.send({
             from: 'RankForge <notifications@rankforge.app>',
             to: [toEmail],
             subject: `RankForge Status Update: ${clientName}`,

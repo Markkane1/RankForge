@@ -1,28 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { db } from '@/lib/db';
+import { requireRole } from '@/lib/auth-guard';
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
-    }
-
-    const userId = session.user.id;
-    const userRole = session.user.role;
-
-    // Only APPROVER or OWNER can approve
-    if (userRole !== 'APPROVER' && userRole !== 'OWNER') {
-      return NextResponse.json(
-        { error: 'Only APPROVER or OWNER roles can approve requests' },
-        { status: 403 }
-      );
-    }
+    const auth = await requireRole('APPROVER', 'OWNER');
+    if (!auth.ok) return auth.response;
+    const userId = auth.user.id;
 
     const { id } = await params;
 
@@ -57,6 +44,124 @@ export async function POST(
         reviewedAt: now,
       },
     });
+
+    // ─── Execute Intercepted Actions Upon Approval ───
+    if (approval.requestData) {
+      try {
+        const data = typeof approval.requestData === 'string' ? JSON.parse(approval.requestData) : approval.requestData;
+
+        if (approval.requestType === 'CLIENT_PROFILE_CHANGE' && approval.clientId) {
+          const { withClientTenant } = await import('@/lib/db');
+          await withClientTenant(approval.clientId, async (tenantDb) => {
+            await tenantDb.client.update({
+              where: { id: approval.clientId! },
+              data: {
+                ...(data.businessName !== undefined && { businessName: data.businessName }),
+                ...(data.phone !== undefined && { phone: data.phone }),
+                ...(data.email !== undefined && { email: data.email }),
+                ...(data.website !== undefined && { website: data.website }),
+                ...(data.address !== undefined && { address: data.address }),
+                ...(data.city !== undefined && { city: data.city }),
+                ...(data.state !== undefined && { state: data.state }),
+                ...(data.postalCode !== undefined && { postalCode: data.postalCode }),
+              },
+            });
+            await tenantDb.changeLogEntry.create({
+              data: {
+                clientId: approval.clientId!,
+                module: 'CORE',
+                entityType: 'Client',
+                entityId: approval.clientId!,
+                field: 'client_profile_approved',
+                oldValue: 'PENDING_APPROVAL',
+                newValue: 'APPROVED',
+                changedById: userId,
+              },
+            });
+          });
+        } else if (approval.requestType === 'GBP_VERIFICATION' && approval.clientId) {
+          const { withClientTenant } = await import('@/lib/db');
+          await withClientTenant(approval.clientId, async (tenantDb) => {
+            const gbpId = data.gbpId;
+            const targetProfile = gbpId
+              ? await tenantDb.gbpProfile.findUnique({ where: { id: gbpId, clientId: approval.clientId! } })
+              : await tenantDb.gbpProfile.findFirst({ where: { clientId: approval.clientId! } });
+            if (targetProfile) {
+              await tenantDb.gbpProfile.update({
+                where: { id: targetProfile.id, clientId: approval.clientId! },
+                data: { isVerified: data.isVerified ?? true },
+              });
+              await tenantDb.changeLogEntry.create({
+                data: {
+                  clientId: approval.clientId!,
+                  module: 'M1',
+                  entityType: 'GbpProfile',
+                  entityId: targetProfile.id,
+                  field: 'gbp_verification_approved',
+                  oldValue: 'UNVERIFIED',
+                  newValue: 'VERIFIED',
+                  changedById: userId,
+                },
+              });
+            }
+          });
+        } else if (approval.requestType === 'CATEGORY_CHANGE' && approval.clientId) {
+          const { withClientTenant } = await import('@/lib/db');
+          await withClientTenant(approval.clientId, async (tenantDb) => {
+            const targetProfile = await tenantDb.gbpProfile.findFirst({ where: { clientId: approval.clientId! } });
+            if (targetProfile) {
+              await tenantDb.gbpProfile.update({
+                where: { id: targetProfile.id, clientId: approval.clientId! },
+                data: {
+                  ...(data.primaryCategory && { primaryCategory: data.primaryCategory }),
+                  ...(data.secondaryCategories && { secondaryCategories: data.secondaryCategories }),
+                },
+              });
+              await tenantDb.changeLogEntry.create({
+                data: {
+                  clientId: approval.clientId!,
+                  module: 'M1',
+                  entityType: 'GbpProfile',
+                  entityId: targetProfile.id,
+                  field: 'category_change_approved',
+                  oldValue: targetProfile.primaryCategory || 'NONE',
+                  newValue: data.primaryCategory || 'UPDATED',
+                  changedById: userId,
+                },
+              });
+            }
+          });
+        } else if (approval.requestType === 'CONFLICT_OF_INTEREST') {
+          const incoming = data.incoming || data;
+          if (incoming && incoming.name) {
+            const org = await db.organization.findFirst();
+            if (org) {
+              const slug = incoming.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+              const existingClient = await db.client.findFirst({ where: { slug } });
+              if (!existingClient) {
+                await db.client.create({
+                  data: {
+                    name: incoming.name.trim(),
+                    slug,
+                    businessName: incoming.businessName || null,
+                    city: incoming.city || null,
+                    isActive: true,
+                    organizationId: org.id,
+                    gbpProfiles: {
+                      create: {
+                        primaryCategory: incoming.primaryCategory || null,
+                      },
+                    },
+                  },
+                });
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to execute approved action side effects:', err);
+      }
+    }
 
     // If there's a linked task with status PENDING_APPROVAL, move it to IN_PROGRESS
     if (approval.taskId) {

@@ -7,8 +7,9 @@ export async function GET() {
   if (!auth.ok) return auth.response;
 
   try {
-    const organization = await db.organization.findFirst({
-      orderBy: { createdAt: "asc" },
+    const orgId = auth.user.organizationId;
+    const organization = await db.organization.findUnique({
+      where: { id: orgId },
     });
 
     if (!organization) {
@@ -20,14 +21,28 @@ export async function GET() {
 
     const [staff, clientCount, taskCount, approvalCount] = await Promise.all([
       db.staffUser.findMany({
-        where: { organizationId: organization.id },
+        where: { organizationId: orgId },
         orderBy: { createdAt: "asc" },
       }),
       db.client.count({
-        where: { organizationId: organization.id },
+        where: { organizationId: orgId },
       }),
-      db.task.count(),
-      db.approvalRequest.count(),
+      db.task.count({
+        where: {
+          OR: [
+            { client: { organizationId: orgId } },
+            { requestedBy: { organizationId: orgId } },
+          ],
+        },
+      }),
+      db.approvalRequest.count({
+        where: {
+          OR: [
+            { client: { organizationId: orgId } },
+            { requestedBy: { organizationId: orgId } },
+          ],
+        },
+      }),
     ]);
 
     return NextResponse.json({

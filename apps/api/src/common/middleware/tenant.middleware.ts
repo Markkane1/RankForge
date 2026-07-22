@@ -6,7 +6,7 @@ import { prisma } from '@rankforge/database';
 export class TenantMiddleware implements NestMiddleware {
   async use(req: Request, res: Response, next: NextFunction) {
     const clientId = req.headers['x-client-id'] as string;
-    
+
     // For agency-level operations, client-id might be omitted.
     // If provided, we set the postgres session variable for RLS boundaries.
     if (clientId) {

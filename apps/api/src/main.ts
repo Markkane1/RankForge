@@ -3,19 +3,22 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import * as Sentry from '@sentry/node';
 import { SentryExceptionFilter } from './common/filters/sentry-exception.filter';
+import { validateApiEnv } from './env';
+
+validateApiEnv();
 
 // Initialize Sentry early
 Sentry.init({
-  dsn: process.env.SENTRY_DSN || "https://placeholder@sentry.io/12345",
+  dsn: process.env.SENTRY_DSN,
   tracesSampleRate: 1.0,
 });
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  
+
   const { httpAdapter } = app.get(HttpAdapterHost);
   app.useGlobalFilters(new SentryExceptionFilter(httpAdapter));
-  
+
   // Ponytail: Minimalist Swagger config for File 05 Guardrails
   const config = new DocumentBuilder()
     .setTitle('RankForge API')

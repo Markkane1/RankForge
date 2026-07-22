@@ -1,28 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { db } from '@/lib/db';
+import { requireRole } from '@/lib/auth-guard';
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
-    }
-
-    const userId = session.user.id;
-    const userRole = session.user.role;
-
-    // Only APPROVER or OWNER can reject
-    if (userRole !== 'APPROVER' && userRole !== 'OWNER') {
-      return NextResponse.json(
-        { error: 'Only APPROVER or OWNER roles can reject requests' },
-        { status: 403 }
-      );
-    }
+    const auth = await requireRole('APPROVER', 'OWNER');
+    if (!auth.ok) return auth.response;
+    const userId = auth.user.id;
 
     const { id } = await params;
     const body = await request.json();

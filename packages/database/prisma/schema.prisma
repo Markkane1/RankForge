@@ -65,6 +65,7 @@ enum ClientState {
   GROWTH
   AT_RISK
   PAUSED
+  OFFBOARDED
 }
 
 enum ClientType {
@@ -88,6 +89,7 @@ model Client {
   type           ClientType            @default(SERVICE_AREA_BUSINESS)
   lifecycleState ClientState           @default(ONBOARDING)
   notes          String?
+  intakeData     String?               // JSON questionnaire answers from REQ-M1-02
   isActive       Boolean               @default(true)
   organizationId String
   organization   Organization          @relation(fields: [organizationId], references: [id])
@@ -97,6 +99,7 @@ model Client {
   approvals      ApprovalRequest[]
   changeLog      ChangeLogEntry[]
   leads          LeadLogEntry[]
+  reviewAsks     ReviewAsk[]
   reports        MonthlyReport[]
   keywords       KeywordMapEntry[]
   competitors    CompetitorBenchmark[]
@@ -143,6 +146,7 @@ model GbpProfile {
   updatedAt           DateTime    @updatedAt
   posts               GbpPost[]
   reviews             GbpReview[]
+  reviewAsks          ReviewAsk[]
   photos              GbpPhoto[]
   services            GbpService[]
   products            GbpProduct[]
@@ -156,6 +160,8 @@ model GbpFaq {
   question     String
   answer       String     @db.Text
   lastTestedAt DateTime?
+  lastVisibilitySource String?
+  lastVisibilityEvidence String? @db.Text
   passCount    Int        @default(0)
   failCount    Int        @default(0)
   createdAt    DateTime   @default(now())
@@ -216,8 +222,34 @@ model GbpReview {
   reviewDate   DateTime?
   replyText    String?
   repliedAt    DateTime?
+  requiresHumanGate Boolean @default(false)
   source       String     @default("GOOGLE")
   createdAt    DateTime   @default(now())
+}
+
+model ReviewAsk {
+  id             String      @id @default(cuid())
+  clientId       String
+  client         Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  gbpProfileId   String?
+  gbpProfile     GbpProfile? @relation(fields: [gbpProfileId], references: [id], onDelete: SetNull)
+  customerName   String
+  phoneNumber    String?
+  email          String?
+  reviewUrl      String
+  status         String      @default("SCHEDULED") // SCHEDULED, SENT, REMINDER_SENT, OPTED_OUT, FAILED
+  optedOut       Boolean     @default(false)
+  sendAfter      DateTime
+  reminderAfter  DateTime?
+  sentAt         DateTime?
+  remindedAt     DateTime?
+  idempotencyKey String      @unique
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([clientId])
+  @@index([gbpProfileId])
+  @@index([status, sendAfter])
 }
 
 model GbpPhoto {
@@ -240,6 +272,7 @@ model GeoGridScanResult {
   scanDate     DateTime
   averageRank  Float
   pointResults Json     // array of {lat,lng,rank}
+  sourceLineage Json?
   createdAt    DateTime @default(now())
 
   @@index([clientId])
@@ -288,6 +321,7 @@ model KeywordMapEntry {
   targetRank   Int?
   priority     Int      @default(5) // 1=high, 10=low
   status       String   @default("ACTIVE") // ACTIVE, ACHIEVED, DROPPED
+  sourceLineage String? // JSON provider/request/response trace
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -309,6 +343,7 @@ model CompetitorBenchmark {
   postFrequency   String?
   strengths       String? // JSON
   weaknesses      String? // JSON
+  sourceLineage   String? // JSON provider/request/response trace
   analyzedAt      DateTime @default(now())
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -367,6 +402,7 @@ model Task {
   startedAt      DateTime?
   completedAt    DateTime?
   dueDate        DateTime?
+  dependsOnTaskIds String[]          @default([])
   result         String? // JSON - outcome of the task
   errorMessage   String?
   retryCount     Int               @default(0)
@@ -416,6 +452,7 @@ enum ApprovalStatus {
   PENDING
   APPROVED
   REJECTED
+  EXPIRED
   CANCELLED
 }
 
@@ -492,6 +529,7 @@ enum LeadSource {
   GBP_DIRECTIONS
   GBP_WEBSITE
   FORM_SUBMISSION
+  BOOKING
   PHONE_CALL
   WHATSAPP
   EMAIL
@@ -581,7 +619,7 @@ model ClientCredential {
   id             String    @id @default(cuid())
   clientId       String
   client         Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  service        String // GBP, GA4, GSC, WHATSAPP
+  service        String // GBP_OAUTH, GA4, GSC, WHATSAPP
   encryptedToken String // AES-256-GCM encrypted
   refreshToken   String? // Encrypted
   tokenExpiryAt  DateTime?
@@ -601,6 +639,9 @@ model Notification {
   type              String // approval_assigned, task_completed, lead_converted, client_at_risk
   title             String
   message           String
+  sourceRule        String?
+  recommendedAction String?
+  dedupeKey         String?
   isRead            Boolean   @default(false)
   relatedEntityId   String? // e.g. approval ID, task ID
   relatedEntityType String? // e.g. 'approval', 'task', 'client'
@@ -609,6 +650,7 @@ model Notification {
 
   @@index([userId])
   @@index([isRead])
+  @@index([dedupeKey])
   @@index([createdAt])
 }
 
@@ -828,6 +870,3 @@ model SecondaryReviewMetric {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
-
-
-

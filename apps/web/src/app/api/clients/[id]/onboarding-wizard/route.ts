@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { withClientTenant } from "@/lib/db";
 import { requireRole } from "@/lib/auth-guard";
+import { transitionClientTo } from "@rankforge/database";
 
 export async function POST(
   request: NextRequest,
@@ -14,9 +15,11 @@ export async function POST(
     const body = await request.json();
     const { hasSite, isIndexable, hasCmsLogin, wantsSite } = body;
 
-    const client = await db.client.findUnique({
-      where: { id }
-    });
+    const client = await withClientTenant(id, (tenantDb) =>
+      tenantDb.client.findUnique({
+        where: { id }
+      })
+    );
 
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -96,42 +99,28 @@ export async function POST(
     }
 
     // Create the appropriate M2 Task and its subtasks
-    const task = await db.task.create({
-      data: {
-        clientId: id,
-        taskId: 'REQ-M2-01',
-        title: taskTitle,
-        description: taskDesc,
-        priority: taskPriority,
-        module: 'M2',
-        status: 'NOT_STARTED',
-        subtasks: {
-          create: subtasksList.map((title, index) => ({
-            title,
-            sortOrder: index + 1
-          }))
+    const { task, updatedClient } = await withClientTenant(id, async (tenantDb) => {
+      const task = await tenantDb.task.create({
+        data: {
+          clientId: id,
+          taskId: 'REQ-M2-01',
+          title: taskTitle,
+          description: taskDesc,
+          priority: taskPriority,
+          module: 'M2',
+          status: 'NOT_STARTED',
+          subtasks: {
+            create: subtasksList.map((title, index) => ({
+              title,
+              sortOrder: index + 1
+            }))
+          }
         }
-      }
-    });
+      });
 
-    // Update client lifecycleState
-    const updatedClient = await db.client.update({
-      where: { id },
-      data: { lifecycleState: newState }
-    });
+      const updatedClient = await transitionClientTo(id, newState, auth.user.id, tenantDb);
 
-    // Create change log entry
-    await db.changeLogEntry.create({
-      data: {
-        clientId: id,
-        module: "M2",
-        entityType: "Client",
-        entityId: id,
-        field: "lifecycleState",
-        oldValue: client.lifecycleState,
-        newValue: newState,
-        changedById: auth.user.id,
-      }
+      return { task, updatedClient };
     });
 
     return NextResponse.json({

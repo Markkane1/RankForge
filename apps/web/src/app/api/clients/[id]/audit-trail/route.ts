@@ -1,40 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth-guard";
+import { db, withClientTenant } from "@/lib/db";
+import { requireClientRole } from "@/lib/auth-guard";
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireSession();
-  if (!auth.ok) return auth.response;
-
   try {
     const { id } = await params;
+    const auth = await requireClientRole(id, "OWNER", "COORDINATOR", "VIEWER", "APPROVER");
+    if (!auth.ok) return auth.response;
 
-    const client = await db.client.findUnique({ where: { id } });
+    const client = await withClientTenant(id, (tenantDb) =>
+      tenantDb.client.findUnique({ where: { id } })
+    );
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    const entries = await db.changeLogEntry.findMany({
-      where: { clientId: id },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        module: true,
-        entityType: true,
-        entityId: true,
-        field: true,
-        oldValue: true,
-        newValue: true,
-        changedById: true,
-        createdAt: true,
-        changedBy: {
-          select: { name: true },
+    const entries = await withClientTenant(id, (tenantDb) =>
+      tenantDb.changeLogEntry.findMany({
+        where: { clientId: id },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          module: true,
+          entityType: true,
+          entityId: true,
+          field: true,
+          oldValue: true,
+          newValue: true,
+          changedById: true,
+          createdAt: true,
         },
-      },
-    });
+      })
+    );
+
+    // ponytail: resolve changedBy names in one batch lookup rather than N queries
+    const uniqueUserIds = [...new Set(entries.map((e) => e.changedById).filter(Boolean))] as string[];
+    const users = uniqueUserIds.length
+      ? await db.staffUser.findMany({ where: { id: { in: uniqueUserIds } }, select: { id: true, name: true } })
+      : [];
+    const userMap = Object.fromEntries(users.map((u) => [u.id, u.name]));
 
     const result = entries.map((e) => ({
       id: e.id,
@@ -45,7 +52,7 @@ export async function GET(
       oldValue: e.oldValue,
       newValue: e.newValue,
       changedById: e.changedById,
-      changedByName: e.changedBy?.name ?? null,
+      changedByName: e.changedById ? (userMap[e.changedById] ?? null) : null,
       createdAt: e.createdAt.toISOString(),
     }));
 

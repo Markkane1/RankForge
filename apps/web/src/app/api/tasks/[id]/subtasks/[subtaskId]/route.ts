@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireRole } from "@/lib/auth-guard";
 
 export async function PATCH(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string; subtaskId: string }> }
 ) {
   try {
+    const auth = await requireRole('OWNER', 'COORDINATOR');
+    if (!auth.ok) return auth.response;
+
     const { id, subtaskId } = await params;
 
     const subtask = await db.subtask.findUnique({
@@ -36,6 +40,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; subtaskId: string }> }
 ) {
   try {
+    const auth = await requireRole('OWNER', 'COORDINATOR');
+    if (!auth.ok) return auth.response;
+
     const { id, subtaskId } = await params;
 
     const subtask = await db.subtask.findUnique({

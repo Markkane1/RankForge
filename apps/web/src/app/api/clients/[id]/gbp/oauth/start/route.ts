@@ -1,24 +1,24 @@
 import { NextResponse } from 'next/server';
 import { google } from 'googleapis';
-import { auth } from '@/auth';
-import { db } from '@/lib/db';
+import { withClientTenant } from '@/lib/db';
+import { requireClientRole } from '@/lib/auth-guard';
+import { signOAuthState } from '@/lib/oauth-state';
 
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return new NextResponse('Unauthorized', { status: 401 });
-    }
-
     const clientId = params.id;
+    const auth = await requireClientRole(clientId, 'OWNER', 'COORDINATOR');
+    if (!auth.ok) return auth.response;
     
     // Check if client exists
-    const client = await db.client.findUnique({
-      where: { id: clientId },
-    });
+    const client = await withClientTenant(clientId, (tenantDb) =>
+      tenantDb.client.findUnique({
+        where: { id: clientId },
+      })
+    );
 
     if (!client) {
       return new NextResponse('Client not found', { status: 404 });
@@ -38,7 +38,7 @@ export async function GET(
       access_type: 'offline',
       prompt: 'consent',
       scope: scopes,
-      state: clientId, // Passing clientId as state to ensure we link to the right client
+      state: signOAuthState(clientId, auth.user.id),
     });
 
     return NextResponse.redirect(url);

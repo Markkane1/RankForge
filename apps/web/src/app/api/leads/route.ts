@@ -1,41 +1,71 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, withClientTenant } from "@/lib/db";
 import { LeadSource } from "@rankforge/database";
 import { emitRealtimeEvent } from "@/lib/realtime-server";
-import { requireSession } from "@/lib/auth-guard";
+import { requireClientRole, requireSession } from "@/lib/auth-guard";
 import { createLeadSchema } from "@/lib/validations";
 
 const VALID_SOURCES = Object.values(LeadSource);
 
 export async function GET(request: NextRequest) {
-  const auth = await requireSession();
-  if (!auth.ok) return auth.response;
-
   try {
     const { searchParams } = new URL(request.url);
     const clientId = searchParams.get("clientId");
     const limitParam = searchParams.get("limit");
     const source = searchParams.get("source");
 
-    const where: Record<string, unknown> = {};
+    const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 20, 1), 100) : 20;
 
     if (clientId) {
-      where.clientId = clientId;
+      // Client-scoped request — use tenant RLS
+      const auth = await requireClientRole(clientId);
+      if (!auth.ok) return auth.response;
+
+      const where: Record<string, unknown> = { clientId };
+      if (source && VALID_SOURCES.includes(source as LeadSource)) {
+        where.source = source;
+      }
+
+      const leads = await withClientTenant(clientId, (tenantDb) =>
+        tenantDb.leadLogEntry.findMany({
+          where,
+          orderBy: { createdAt: "desc" },
+          take: limit,
+          include: { client: { select: { name: true } } },
+        })
+      );
+
+      return NextResponse.json(
+        leads.map((l) => ({
+          id: l.id,
+          clientId: l.clientId,
+          client: l.client,
+          source: l.source,
+          value: l.value,
+          contactInfo: l.contactInfo,
+          notes: l.notes,
+          convertedAt: l.convertedAt?.toISOString() ?? null,
+          createdAt: l.createdAt.toISOString(),
+        }))
+      );
     }
 
+    // ponytail: org-wide fallback (dashboard recent leads) — requires valid session only
+    const auth = await requireSession();
+    if (!auth.ok) return auth.response;
+
+    const where: Record<string, unknown> = {
+      client: { organizationId: auth.user.organizationId },
+    };
     if (source && VALID_SOURCES.includes(source as LeadSource)) {
       where.source = source;
     }
-
-    const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 20, 1), 100) : 20;
 
     const leads = await db.leadLogEntry.findMany({
       where,
       orderBy: { createdAt: "desc" },
       take: limit,
-      include: {
-        client: { select: { name: true } },
-      },
+      include: { client: { select: { name: true } } },
     });
 
     return NextResponse.json(
@@ -61,13 +91,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireSession();
-  if (!auth.ok) return auth.response;
-
   try {
     const body = await request.json();
-
     const parsed = createLeadSchema.safeParse(body);
+
     if (!parsed.success) {
       return NextResponse.json(
         { error: "Invalid input", details: parsed.error.format() },
@@ -76,28 +103,35 @@ export async function POST(request: NextRequest) {
     }
 
     const { clientId, source, value, contactInfo, notes } = parsed.data;
+    const auth = await requireClientRole(clientId, 'OWNER', 'COORDINATOR');
+    if (!auth.ok) return auth.response;
 
-    // Verify client exists
-    const client = await db.client.findUnique({ where: { id: clientId } });
-    if (!client) {
+    const { client, lead } = await withClientTenant(clientId, async (tenantDb) => {
+      const client = await tenantDb.client.findUnique({ where: { id: clientId } });
+      if (!client) return { client: null, lead: null };
+
+      const lead = await tenantDb.leadLogEntry.create({
+        data: {
+          clientId,
+          source,
+          value: value ?? null,
+          contactInfo: contactInfo?.trim() || null,
+          notes: notes?.trim() || null,
+        },
+        include: {
+          client: { select: { name: true } },
+        },
+      });
+
+      return { client, lead };
+    });
+
+    if (!client || !lead) {
       return NextResponse.json(
         { error: "Client not found" },
         { status: 404 }
       );
     }
-
-    const lead = await db.leadLogEntry.create({
-      data: {
-        clientId,
-        source,
-        value: value ?? null,
-        contactInfo: contactInfo?.trim() || null,
-        notes: notes?.trim() || null,
-      },
-      include: {
-        client: { select: { name: true } },
-      },
-    });
 
     // Emit real-time event for new lead
     emitRealtimeEvent('notification', {

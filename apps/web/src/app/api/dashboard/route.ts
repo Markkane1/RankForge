@@ -249,27 +249,34 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
-          // Compute citation metrics using BrightLocal
+          // Compute citation metrics using BrightLocal (optional — skipped if not configured)
       let totalCitations = 0;
       let weightedScoreSum = 0;
       if (organizationInfo?.organizationId && gbpProfilesWithLocation?.length) {
-        const blClient = new BrightLocalClient(organizationInfo.organizationId);
-        await blClient.init();
-        await Promise.all(gbpProfilesWithLocation.map(async (p) => {
-          if (!p.gbpLocationId) return;
-          try {
-            const report = await blClient.getCitationTrackerReport(p.gbpLocationId);
-            const citations = report.citations ?? [];
-            for (const c of citations) {
-              const count = c.citationCount ?? 0;
-              const score = c.keyCitationScore ?? 0;
-              totalCitations += count;
-              weightedScoreSum += score * count;
-            }
-          } catch (e) {
-            console.error('BrightLocal citation fetch error for location', p.gbpLocationId, e);
+        try {
+          const blClient = new BrightLocalClient(organizationInfo.organizationId);
+          await blClient.init();
+          if (blClient.isConnected) {
+            await Promise.all(gbpProfilesWithLocation.map(async (p) => {
+              if (!p.gbpLocationId) return;
+              try {
+                const report = await blClient.getCitationTrackerReport(p.gbpLocationId);
+                const citations = report.citations ?? [];
+                for (const c of citations) {
+                  const count = c.citationCount ?? 0;
+                  const score = c.keyCitationScore ?? 0;
+                  totalCitations += count;
+                  weightedScoreSum += score * count;
+                }
+              } catch (e) {
+                console.error('BrightLocal citation fetch error for location', p.gbpLocationId, e);
+              }
+            }));
           }
-        }));
+        } catch (e) {
+          // ponytail: BrightLocal not configured or credentials unavailable — skip citations gracefully
+          console.warn('BrightLocal init skipped (not configured):', (e as Error).message);
+        }
       }
       const averageScore = totalCitations > 0 ? Math.round((weightedScoreSum / totalCitations) * 10) / 10 : 0;
 
@@ -294,9 +301,9 @@ export async function GET(req: NextRequest) {
     citationMetrics: { totalCitations, averageScore },
   });
   } catch (error) {
-    console.error("Dashboard API error:", error);
+    console.error("Dashboard API error:", error instanceof Error ? error.stack : error);
     return NextResponse.json(
-      { error: "Failed to load dashboard data" },
+      { error: "Failed to load dashboard data", detail: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     );
   }

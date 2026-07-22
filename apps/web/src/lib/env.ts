@@ -27,6 +27,7 @@ const envSchema = z.object({
 
   // ─── Frontend API ───
   NEXT_PUBLIC_API_URL: z.string().default('http://localhost:3001'),
+  NEXT_PUBLIC_APP_URL: z.string().default('http://localhost:3000'),
 });
 
 const isProduction = process.env.NODE_ENV === 'production';

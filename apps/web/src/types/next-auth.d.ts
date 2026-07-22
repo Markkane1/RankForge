@@ -8,12 +8,14 @@ declare module 'next-auth' {
       name: string;
       email: string;
       role: string;
+      organizationId: string;
       twoFactorEnabled?: boolean;
       twoFactorVerified?: boolean;
     };
   }
   interface User {
     role?: string;
+    organizationId?: string;
     twoFactorEnabled?: boolean;
     twoFactorVerified?: boolean;
   }
@@ -23,6 +25,7 @@ declare module 'next-auth/jwt' {
   interface JWT {
     role?: string;
     userId?: string;
+    organizationId?: string;
     twoFactorEnabled?: boolean;
     twoFactorVerified?: boolean;
   }

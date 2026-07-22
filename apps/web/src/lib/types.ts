@@ -1,10 +1,10 @@
 // ─── Enums (mirrors Prisma) ───
 
-export type ClientState = 'ONBOARDING' | 'BUILD' | 'GROWTH' | 'AT_RISK' | 'PAUSED';
+export type ClientState = 'ONBOARDING' | 'BUILD' | 'GROWTH' | 'AT_RISK' | 'PAUSED' | 'OFFBOARDED';
 export type ClientType = 'SERVICE_AREA_BUSINESS' | 'STOREFRONT_BUSINESS';
 export type TaskStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'PENDING_APPROVAL' | 'DONE' | 'FAILED' | 'BLOCKED' | 'DEFERRED';
 export type TaskPriority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
-export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'CANCELLED';
 export type ReqStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'DONE' | 'BLOCKED' | 'DEFERRED';
 export type StaffRole = 'OWNER' | 'COORDINATOR' | 'APPROVER' | 'VIEWER';
 
@@ -159,6 +159,7 @@ export interface GeoGridScanResult {
   scanDate: string;
   averageRank: number;
   pointResults: { lat: number; lng: number; rank: number }[];
+  sourceLineage?: unknown;
   createdAt: string;
 }
 
@@ -202,6 +203,9 @@ export interface NotificationItem {
   type: 'approval_assigned' | 'task_completed' | 'lead_converted' | 'client_at_risk' | string;
   title: string;
   message: string;
+  sourceRule?: string | null;
+  recommendedAction?: string | null;
+  dedupeKey?: string | null;
   read: boolean;
   relatedEntityId?: string;
   relatedEntityType?: string;
@@ -388,6 +392,14 @@ export interface CreateClientData {
   postalCode?: string;
   type?: ClientType;
   notes?: string;
+  legalName?: string;
+  serviceList?: string;
+  whatsapp?: string;
+  existingGbpLoginDetails?: string;
+  pastSuspensions?: "YES" | "NO" | "UNKNOWN";
+  photoAvailability?: string;
+  usps?: string;
+  bookingSystem?: string;
   primaryCategory?: string;
   secondaryCategories?: string;
   gbpDescription?: string;

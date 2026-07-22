@@ -13,12 +13,13 @@ node_modules
 # testing
 /coverage
 
-# next.js
-/.next/
-/out/
+# next.js — match anywhere in monorepo (not just repo root)
+.next/
+out/
 
-# production
-/build
+# production build outputs
+build/
+dist/
 
 # misc
 .DS_Store
@@ -32,6 +33,17 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+.env.local
+.env.*.local
+
+# Turborepo cache
+.turbo/
+
+# Cache directories
+.cache/
+
+# pnpm store
+.pnpm-store/
 
 # vercel
 .vercel
@@ -52,3 +64,9 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# AI-generated compliance/audit scripts (not part of committed codebase)
+/scripts/
+
+# Documents folder
+/Documents/

@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireRole } from "@/lib/auth-guard";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireRole('OWNER', 'COORDINATOR');
+    if (!auth.ok) return auth.response;
+
     const { id } = await params;
     const body = await request.json();
     const { title } = body;
@@ -25,6 +29,7 @@ export async function POST(
       select: { sortOrder: true },
     });
 
+    // REQ-M6-TASK-03: task log/subtask entries track execution work under a task.
     const subtask = await db.subtask.create({
       data: {
         taskId: id,

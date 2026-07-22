@@ -58,7 +58,19 @@ export class DataForSeoClient {
     const taskResult = data?.tasks?.[0]?.result?.[0];
     const volume = taskResult?.search_volume ?? 0;
 
-    return { keyword, volume };
+    return {
+      keyword,
+      volume,
+      sourceLineage: {
+        provider: "DATAFORSEO",
+        endpoint: "dataforseo_labs/google/search_volume/live",
+        keyword,
+        locationCode: 2840,
+        taskId: data?.tasks?.[0]?.id ?? null,
+        statusCode: data?.tasks?.[0]?.status_code ?? null,
+        fetchedAt: new Date().toISOString(),
+      },
+    };
   }
 
   // REQ-M1-06: Competitor geo-point benchmark audit using DataForSEO
@@ -96,6 +108,15 @@ export class DataForSeoClient {
       categories: JSON.stringify(item.category ? [item.category] : []),
       avgRating: item.rating?.value,
       reviewCount: item.rating?.votes_count,
+      sourceLineage: {
+        provider: "DATAFORSEO",
+        endpoint: "serp/google/maps/live/advanced",
+        keyword,
+        locationName: location_name,
+        taskId: data?.tasks?.[0]?.id ?? null,
+        itemRank: item.rank_group ?? item.rank_absolute ?? null,
+        fetchedAt: new Date().toISOString(),
+      },
     }));
   }
 }

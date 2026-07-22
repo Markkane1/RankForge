@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { withClientTenant } from "@/lib/db";
 import { requireRole } from "@/lib/auth-guard";
 
 export async function POST(
@@ -13,15 +13,17 @@ export async function POST(
     const { id: clientId } = await params;
     const body = await request.json();
 
-    const newProfile = await db.gbpProfile.create({
-      data: {
-        clientId,
-        gbpAccountId: body.gbpAccountId || null,
-        gbpLocationId: body.gbpLocationId || null,
-        gbpLocationName: body.gbpLocationName || null,
-      },
-      include: { reviews: { select: { rating: true } } },
-    });
+    const newProfile = await withClientTenant(clientId, (tenantDb) =>
+      tenantDb.gbpProfile.create({
+        data: {
+          clientId,
+          gbpAccountId: body.gbpAccountId || null,
+          gbpLocationId: body.gbpLocationId || null,
+          gbpLocationName: body.gbpLocationName || null,
+        },
+        include: { reviews: { select: { rating: true } } },
+      })
+    );
 
     return NextResponse.json(newProfile, { status: 201 });
   } catch (error) {

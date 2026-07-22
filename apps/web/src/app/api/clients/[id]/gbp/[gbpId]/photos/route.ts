@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { withClientTenant } from "@/lib/db";
 import { requireRole } from "@/lib/auth-guard";
+import { mkdir, writeFile } from "fs/promises";
+import path from "path";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -16,10 +18,12 @@ export async function GET(
   try {
     const { id: clientId, gbpId } = await params;
 
-    const photos = await db.gbpPhoto.findMany({
-      where: { gbpProfileId: gbpId, gbpProfile: { clientId } },
-      orderBy: { createdAt: "desc" },
-    });
+    const photos = await withClientTenant(clientId, (tenantDb) =>
+      tenantDb.gbpPhoto.findMany({
+        where: { gbpProfileId: gbpId, gbpProfile: { clientId } },
+        orderBy: { createdAt: "desc" },
+      })
+    );
 
     return NextResponse.json(photos);
   } catch (error) {
@@ -64,27 +68,41 @@ export async function POST(
     }
 
     // Verify profile exists
-    const profile = await db.gbpProfile.findUnique({
-      where: { id: gbpId, clientId },
-    });
+    const profile = await withClientTenant(clientId, (tenantDb) =>
+      tenantDb.gbpProfile.findUnique({
+        where: { id: gbpId, clientId },
+      })
+    );
 
     if (!profile) {
       return NextResponse.json({ error: "GBP profile not found" }, { status: 404 });
     }
 
-    // Mock an upload path instead of writing to disk/S3
-    const mockUrl = `/mock-uploads/${gbpId}-${Date.now()}-${file.name}`;
+    const uploadDir = path.join(process.cwd(), ".storage", "gbp-photos", gbpId);
+    const storedName = `${Date.now()}-${file.name}`;
+    await mkdir(uploadDir, { recursive: true });
+    await writeFile(path.join(uploadDir, storedName), Buffer.from(await file.arrayBuffer()));
+    const photoUrl = `/api/clients/${clientId}/gbp/${gbpId}/photos/__PHOTO_ID__`;
 
-    const newPhoto = await db.gbpPhoto.create({
-      data: {
-        gbpProfileId: gbpId,
-        url: mockUrl,
-        category: category || "EXTERIOR",
-        uploadedAt: new Date(),
-      },
-    });
+    const newPhoto = await withClientTenant(clientId, (tenantDb) =>
+      tenantDb.gbpPhoto.create({
+        data: {
+          gbpProfileId: gbpId,
+          url: photoUrl,
+          category: category || "EXTERIOR",
+          uploadedAt: new Date(),
+        },
+      })
+    );
 
-    return NextResponse.json(newPhoto, { status: 201 });
+    const photoWithReadUrl = await withClientTenant(clientId, (tenantDb) =>
+      tenantDb.gbpPhoto.update({
+        where: { id: newPhoto.id },
+        data: { url: `/api/clients/${clientId}/gbp/${gbpId}/photos/${newPhoto.id}?name=${encodeURIComponent(storedName)}` },
+      })
+    );
+
+    return NextResponse.json(photoWithReadUrl, { status: 201 });
   } catch (error) {
     console.error("GBP photos POST error:", error);
     return NextResponse.json(

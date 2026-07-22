@@ -15,7 +15,9 @@ import type {
   GeoGridScanResult,
 } from '@/lib/types';
 
-const BASE = process.env.NEXT_PUBLIC_API_URL || '';
+// ponytail: all routes here are Next.js API routes on the same origin — always use relative paths
+const BASE = '';
+
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${url}`, {

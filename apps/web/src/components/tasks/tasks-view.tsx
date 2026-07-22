@@ -184,6 +184,7 @@ export function TasksView() {
 
   const activeCount = sortedTasks.filter((t) => t.status !== 'DONE' && t.status !== 'DEFERRED').length;
   const doneCount = sortedTasks.filter((t) => t.status === 'DONE').length;
+  const failedCount = sortedTasks.filter((t) => t.status === 'FAILED').length;
 
   return (
     <div className="flex h-full flex-col">
@@ -317,6 +318,15 @@ export function TasksView() {
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 -translate-y-[1.5px] mr-1" />
             <span className="font-medium text-emerald-700">{doneCount} done</span>
           </span>
+          <Button
+            variant={statusFilter === 'FAILED' ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-xs text-red-700 hover:text-red-800"
+            onClick={() => setStatusFilter(statusFilter === 'FAILED' ? 'ALL' : 'FAILED')}
+          >
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Failed Tasks ({failedCount})
+          </Button>
         </div>
       </div>
 

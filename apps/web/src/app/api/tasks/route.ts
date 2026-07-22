@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { TaskStatus, TaskPriority } from "@rankforge/database";
+import { TaskStatus, TaskPriority, taskPriorityScore } from "@rankforge/database";
 import { rateLimitSensitive } from "@/lib/rate-limit";
 import { createTaskSchema } from "@/lib/validations";
+import { requireRole, requireSession } from "@/lib/auth-guard";
 
 const VALID_MODULES = ["M1", "M2", "M3", "M4", "M5", "M6", "META", "CORE"];
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireRole('OWNER', 'COORDINATOR');
+    if (!auth.ok) return auth.response;
+
     const ip = request.headers.get("x-forwarded-for") || "unknown";
     const rl = await rateLimitSensitive(ip, "task_create");
     if (!rl.success) {
@@ -27,12 +31,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { title, description, clientId, module, priority, sprint, dueDate } = parsed.data;
+    const { title, description, clientId, module, priority, sprint, dueDate, dependsOnTaskIds } = parsed.data;
 
-    // Get first staff user as requester
-    const firstStaff = await db.staffUser.findFirst({ where: { isActive: true }, orderBy: { createdAt: "asc" } });
-    const requestedById = firstStaff?.id ?? "system";
-
+    // REQ-M6-TASK-01: task CRUD creation endpoint.
     const task = await db.task.create({
       data: {
         taskId: `NEW-${Date.now()}`,
@@ -43,8 +44,9 @@ export async function POST(request: NextRequest) {
         priority,
         sprint: sprint ?? null,
         dueDate: dueDate ? new Date(dueDate) : null,
+        dependsOnTaskIds: dependsOnTaskIds ?? [],
         status: "NOT_STARTED",
-        requestedById,
+        requestedById: auth.user.id,
       },
       include: {
         client: { select: { name: true } },
@@ -65,6 +67,9 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireSession();
+    if (!auth.ok) return auth.response;
+
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
     const taskModule = searchParams.get("module");
@@ -105,10 +110,10 @@ export async function GET(request: NextRequest) {
       take = limit;
     }
 
+    // REQ-M6-TASK-01: task CRUD list endpoint.
     const tasks = await db.task.findMany({
       where,
       orderBy: [
-        { priority: "asc" },
         { updatedAt: "desc" },
       ],
       skip,
@@ -122,6 +127,7 @@ export async function GET(request: NextRequest) {
         },
       },
     });
+    tasks.sort((a, b) => taskPriorityScore(a.priority) - taskPriorityScore(b.priority));
 
     if (page !== null && limit !== null) {
       return NextResponse.json({

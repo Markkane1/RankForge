@@ -1,65 +1,137 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth-guard";
-import { WhatsAppClient } from "@/lib/integrations/whatsapp";
+import { withClientTenant } from "@/lib/db";
+import { requireClientRole } from "@/lib/auth-guard";
+import { taskQueue } from "@rankforge/queue";
+import { z } from "zod";
+
+const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+
+const reviewInviteSchema = z.object({
+  gbpId: z.string().optional(),
+  phoneNumber: z.string().trim().min(6),
+  customerName: z.string().trim().min(1),
+  optOut: z.boolean().optional(),
+});
+
+function customerKey(phoneNumber: string): string {
+  return phoneNumber.replace(/\D/g, "") || phoneNumber.toLowerCase();
+}
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireSession();
+  const { id } = await params;
+  const auth = await requireClientRole(id, "OWNER", "COORDINATOR");
   if (!auth.ok) return auth.response;
 
   try {
-    const { phoneNumber, customerName } = await request.json();
-
-    if (!phoneNumber || !customerName) {
-      return NextResponse.json({ error: "Missing phoneNumber or customerName" }, { status: 400 });
+    const parsed = reviewInviteSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid review invite payload" }, { status: 400 });
     }
+    const { gbpId, phoneNumber, customerName, optOut } = parsed.data;
+    const normalizedCustomerKey = customerKey(phoneNumber);
 
-    const client = await db.client.findUnique({
-      where: { id: params.id },
-      include: {
-        gbpProfiles: true,
-      }
-    });
+    const client = await withClientTenant(id, (tenantDb) =>
+      tenantDb.client.findUnique({
+        where: { id },
+        include: {
+          gbpProfiles: gbpId ? { where: { id: gbpId } } : true,
+        }
+      })
+    );
 
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
     const primaryGbp = client.gbpProfiles[0];
+    if (!primaryGbp) {
+      return NextResponse.json({ error: "GBP profile not found for review invite" }, { status: 404 });
+    }
     const reviewLink = primaryGbp?.websiteUrl || `https://g.page/r/${primaryGbp?.id || 'default'}/review`;
 
-    // Connect WhatsApp Client
-    const whatsapp = new WhatsAppClient(client.organizationId);
-    await whatsapp.init();
+    if (optOut) {
+      const optOutAsk = await withClientTenant(client.id, (tenantDb) =>
+        tenantDb.reviewAsk.upsert({
+          where: { idempotencyKey: `ReviewOptOut:${client.id}:${normalizedCustomerKey}` },
+          update: { customerName, phoneNumber, status: "OPTED_OUT", optedOut: true },
+          create: {
+            clientId: client.id,
+            gbpProfileId: primaryGbp.id,
+            customerName,
+            phoneNumber,
+            reviewUrl: reviewLink,
+            status: "OPTED_OUT",
+            optedOut: true,
+            sendAfter: new Date(Date.now() + TWO_HOURS_MS),
+            idempotencyKey: `ReviewOptOut:${client.id}:${normalizedCustomerKey}`,
+          },
+        })
+      );
 
-    if (!whatsapp.isConnected) {
-      return NextResponse.json({ error: "WhatsApp integration not configured for this organization" }, { status: 400 });
+      return NextResponse.json({ success: true, reviewAskId: optOutAsk.id, status: "OPTED_OUT" });
     }
 
-    const messageText = `Hi ${customerName}, thanks for choosing ${client.name}! We value your feedback. Please consider leaving us a review here: ${reviewLink}`;
+    const optedOutAsk = await withClientTenant(client.id, (tenantDb) =>
+      tenantDb.reviewAsk.findFirst({
+        where: {
+          clientId: client.id,
+          optedOut: true,
+          phoneNumber,
+        },
+      })
+    );
 
-    await whatsapp.sendMessage(phoneNumber, messageText);
+    if (optedOutAsk) {
+      return NextResponse.json({ error: "Customer has opted out of review asks" }, { status: 409 });
+    }
 
-    // Log the action
-    await db.leadLogEntry.create({
-      data: {
-        clientId: client.id,
-        source: "WHATSAPP",
-        value: 0,
-        contactInfo: phoneNumber,
-        notes: `Outbound review invite sent to ${customerName}.`,
-      }
+    const now = Date.now();
+    const sendAfter = new Date(now + TWO_HOURS_MS);
+    const reminderAfter = new Date(now + TWO_HOURS_MS + THREE_DAYS_MS);
+    const idempotencyKey = `ReviewAsk:${client.id}:${primaryGbp.id}:${normalizedCustomerKey}:${now}`;
+
+    const reviewAsk = await withClientTenant(client.id, (tenantDb) =>
+      tenantDb.reviewAsk.create({
+        data: {
+          clientId: client.id,
+          gbpProfileId: primaryGbp.id,
+          customerName,
+          phoneNumber,
+          reviewUrl: reviewLink,
+          sendAfter,
+          reminderAfter,
+          idempotencyKey,
+        }
+      })
+    );
+
+    await taskQueue.add("SendReviewAsk", { reviewAskId: reviewAsk.id }, {
+      delay: TWO_HOURS_MS,
+      jobId: `SendReviewAsk:${reviewAsk.id}`,
+    });
+    await taskQueue.add("SendReviewAskReminder", { reviewAskId: reviewAsk.id }, {
+      delay: TWO_HOURS_MS + THREE_DAYS_MS,
+      jobId: `SendReviewAskReminder:${reviewAsk.id}`,
     });
 
-    return NextResponse.json({ success: true, message: "Review invite sent via WhatsApp" });
+    return NextResponse.json(
+      {
+        success: true,
+        reviewAskId: reviewAsk.id,
+        sendAfter: sendAfter.toISOString(),
+        reminderAfter: reminderAfter.toISOString(),
+      },
+      { status: 202 }
+    );
 
   } catch (error: any) {
-    console.error("WhatsApp review invite error:", error);
+    console.error("Review invite scheduling error:", error);
     return NextResponse.json(
-      { error: "Failed to send review invite", details: error.message },
+      { error: "Failed to schedule review invite", details: error.message },
       { status: 500 }
     );
   }

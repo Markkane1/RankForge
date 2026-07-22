@@ -2,11 +2,11 @@
   "name": "@rankforge/queue",
   "version": "1.0.0",
   "private": true,
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc --noEmit",
-    "test": "echo \"No queue tests yet\""
+    "build": "tsc",
+    "test": "cd ../.. && node scripts/check-queue-exports.js"
   },
   "dependencies": {
     "bullmq": "^5.7.8",

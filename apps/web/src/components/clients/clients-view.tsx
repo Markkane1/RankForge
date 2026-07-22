@@ -50,7 +50,9 @@ import { ClientDetailPanel } from './client-detail-panel';
 const clientFormSchema = z.object({
   name: z.string().min(3, 'Name must be at least 3 characters'),
   businessName: z.string().optional().or(z.literal('')),
+  legalName: z.string().min(1, 'Legal business name is required'),
   phone: z.string().optional().or(z.literal('')),
+  whatsapp: z.string().optional().or(z.literal('')),
   email: z.string().email('Invalid email').optional().or(z.literal('')),
   website: z.string().optional().or(z.literal('')),
   address: z.string().optional().or(z.literal('')),
@@ -60,10 +62,16 @@ const clientFormSchema = z.object({
   postalCode: z.string().optional().or(z.literal('')),
   type: z.enum(['SERVICE_AREA_BUSINESS', 'STOREFRONT_BUSINESS']),
   notes: z.string().optional().or(z.literal('')),
+  serviceList: z.string().min(1, 'Service list is required'),
+  existingGbpLoginDetails: z.string().min(1, 'GBP/login access details are required'),
+  pastSuspensions: z.enum(['YES', 'NO', 'UNKNOWN']),
+  photoAvailability: z.string().min(1, 'Photo availability is required'),
+  usps: z.string().min(1, 'USPs are required'),
+  bookingSystem: z.string().min(1, 'Booking system is required'),
   primaryCategory: z.string().optional().or(z.literal('')),
   secondaryCategories: z.string().optional().or(z.literal('')),
   gbpDescription: z.string().optional().or(z.literal('')),
-  businessHours: z.string().optional().or(z.literal('')),
+  businessHours: z.string().min(1, 'Business hours are required'),
 });
 
 type ClientFormValues = z.infer<typeof clientFormSchema>;
@@ -74,6 +82,7 @@ const stateConfig: Record<string, { color: string; bg: string; label: string }> 
   GROWTH: { color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200', label: 'Growth' },
   AT_RISK: { color: 'text-red-700', bg: 'bg-red-50 border-red-200', label: 'At Risk' },
   PAUSED: { color: 'text-purple-700', bg: 'bg-purple-50 border-purple-200', label: 'Paused' },
+  OFFBOARDED: { color: 'text-gray-600', bg: 'bg-gray-50 border-gray-200', label: 'Offboarded' },
 };
 
 const typeConfig: Record<string, { label: string; icon: React.ReactNode }> = {
@@ -284,7 +293,9 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
     defaultValues: {
       name: '',
       businessName: '',
+      legalName: '',
       phone: '',
+      whatsapp: '',
       email: '',
       website: '',
       address: '',
@@ -294,6 +305,12 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
       postalCode: '',
       type: 'SERVICE_AREA_BUSINESS',
       notes: '',
+      serviceList: '',
+      existingGbpLoginDetails: '',
+      pastSuspensions: 'UNKNOWN',
+      photoAvailability: '',
+      usps: '',
+      bookingSystem: '',
       primaryCategory: '',
       secondaryCategories: '',
       gbpDescription: '',
@@ -431,12 +448,38 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
                     />
                     <FormField
                       control={form.control}
+                      name="legalName"
+                      render={({ field }) => (
+                        <FormItem className="sm:col-span-2">
+                          <FormLabel>Legal Business Name *</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Registered legal business name" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
                       name="phone"
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Phone</FormLabel>
                           <FormControl>
                             <Input placeholder="(555) 123-4567" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="whatsapp"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>WhatsApp</FormLabel>
+                          <FormControl>
+                            <Input placeholder="+15551234567" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -616,6 +659,19 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
                   />
                   <FormField
                     control={form.control}
+                    name="serviceList"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Service List *</FormLabel>
+                        <FormControl>
+                          <Textarea placeholder="Comma-separated services, e.g. Emergency plumbing, Drain cleaning" rows={2} {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
                     name="gbpDescription"
                     render={({ field }) => (
                       <FormItem>
@@ -697,6 +753,78 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
 
                   <Separator className="my-2" />
 
+                  <FormField
+                    control={form.control}
+                    name="existingGbpLoginDetails"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Existing GBP/Login Access *</FormLabel>
+                        <FormControl>
+                          <Textarea placeholder="Access status, invitation email, or who owns the GBP. Do not enter passwords." rows={2} {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="pastSuspensions"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Past Suspensions *</FormLabel>
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                            <SelectContent>
+                              <SelectItem value="NO">No</SelectItem>
+                              <SelectItem value="YES">Yes</SelectItem>
+                              <SelectItem value="UNKNOWN">Unknown</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="bookingSystem"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Booking System *</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Phone, Calendly, Housecall Pro..." {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name="photoAvailability"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Photo Availability *</FormLabel>
+                        <FormControl>
+                          <Textarea placeholder="Existing exterior/interior/team photos, shoot needed, or unavailable" rows={2} {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="usps"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>USPs *</FormLabel>
+                        <FormControl>
+                          <Textarea placeholder="Unique selling points, guarantees, specialties, proof points" rows={2} {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <FormField
                     control={form.control}
                     name="notes"
@@ -978,6 +1106,7 @@ export function ClientsView() {
                   <SelectItem value="GROWTH">Growth</SelectItem>
                   <SelectItem value="AT_RISK">At Risk</SelectItem>
                   <SelectItem value="PAUSED">Paused</SelectItem>
+                  <SelectItem value="OFFBOARDED">Offboarded</SelectItem>
                 </SelectContent>
               </Select>
               <div className="flex items-center gap-2">

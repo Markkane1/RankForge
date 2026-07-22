@@ -35,6 +35,9 @@ export async function GET(request: NextRequest) {
         type: n.type,
         title: n.title,
         message: n.message,
+        sourceRule: n.sourceRule,
+        recommendedAction: n.recommendedAction,
+        dedupeKey: n.dedupeKey,
         isRead: n.isRead,
         relatedEntityId: n.relatedEntityId,
         relatedEntityType: n.relatedEntityType,
@@ -59,7 +62,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { userId, type, title, message, relatedEntityId, relatedEntityType } = body;
+    const { userId, type, title, message, sourceRule, recommendedAction, dedupeKey, relatedEntityId, relatedEntityType } = body;
 
     if (!userId || typeof userId !== "string") {
       return NextResponse.json({ error: "userId is required" }, { status: 400 });
@@ -80,6 +83,9 @@ export async function POST(request: NextRequest) {
         type,
         title,
         message,
+        sourceRule: sourceRule ?? null,
+        recommendedAction: recommendedAction ?? null,
+        dedupeKey: dedupeKey ?? null,
         relatedEntityId: relatedEntityId ?? null,
         relatedEntityType: relatedEntityType ?? null,
       },
@@ -92,6 +98,9 @@ export async function POST(request: NextRequest) {
         type: notification.type,
         title: notification.title,
         message: notification.message,
+        sourceRule: notification.sourceRule,
+        recommendedAction: notification.recommendedAction,
+        dedupeKey: notification.dedupeKey,
         isRead: notification.isRead,
         relatedEntityId: notification.relatedEntityId,
         relatedEntityType: notification.relatedEntityType,

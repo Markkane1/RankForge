@@ -11,4 +11,3 @@ export class AppService {
     return prisma.client.count();
   }
 }
-

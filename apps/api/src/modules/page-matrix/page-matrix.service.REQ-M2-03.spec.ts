@@ -41,12 +41,14 @@ describe('PageMatrixService (REQ-M2-03)', () => {
           slug: 'test-slug',
           pageType: 'LOCATION_PAGE',
           primaryKeyword: 'dentist',
-        })
+        }),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw ConflictException if primary keyword already exists (cannibalization check)', async () => {
-      (prisma.client.findUnique as jest.Mock).mockResolvedValue({ id: 'client1' });
+      (prisma.client.findUnique as jest.Mock).mockResolvedValue({
+        id: 'client1',
+      });
       (prisma.pageMatrixEntry.findUnique as jest.Mock).mockResolvedValue({
         id: 'existing-entry-id',
         clientId: 'client1',
@@ -58,7 +60,7 @@ describe('PageMatrixService (REQ-M2-03)', () => {
           slug: 'test-slug',
           pageType: 'LOCATION_PAGE',
           primaryKeyword: 'dentist',
-        })
+        }),
       ).rejects.toThrow(ConflictException);
 
       expect(prisma.pageMatrixEntry.findUnique).toHaveBeenCalledWith({
@@ -72,7 +74,9 @@ describe('PageMatrixService (REQ-M2-03)', () => {
     });
 
     it('should successfully create entry if keyword is unique', async () => {
-      (prisma.client.findUnique as jest.Mock).mockResolvedValue({ id: 'client1' });
+      (prisma.client.findUnique as jest.Mock).mockResolvedValue({
+        id: 'client1',
+      });
       (prisma.pageMatrixEntry.findUnique as jest.Mock).mockResolvedValue(null);
       (prisma.pageMatrixEntry.create as jest.Mock).mockResolvedValue({
         id: 'new-entry-id',

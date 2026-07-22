@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, PreconditionFailedException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  PreconditionFailedException,
+  NotFoundException,
+} from '@nestjs/common';
 import { prisma } from '@rankforge/database';
 import { XMLParser } from 'fast-xml-parser';
 
@@ -27,11 +32,15 @@ export class SiteAuditService {
 
     let sitemapUrl = client.website;
     if (!sitemapUrl.endsWith('sitemap.xml')) {
-      sitemapUrl = sitemapUrl.endsWith('/') ? `${sitemapUrl}sitemap.xml` : `${sitemapUrl}/sitemap.xml`;
+      sitemapUrl = sitemapUrl.endsWith('/')
+        ? `${sitemapUrl}sitemap.xml`
+        : `${sitemapUrl}/sitemap.xml`;
     }
 
     try {
-      const response = await fetch(sitemapUrl, { signal: AbortSignal.timeout(5000) });
+      const response = await fetch(sitemapUrl, {
+        signal: AbortSignal.timeout(5000),
+      });
       if (!response.ok) {
         throw new Error(`Failed to fetch sitemap: ${response.statusText}`);
       }
@@ -61,14 +70,18 @@ export class SiteAuditService {
         // Fetch up to 3 nested sitemaps to keep it lightweight
         for (const nestedUrl of nestedUrls.slice(0, 3)) {
           try {
-            const nestedRes = await fetch(nestedUrl, { signal: AbortSignal.timeout(5000) });
+            const nestedRes = await fetch(nestedUrl, {
+              signal: AbortSignal.timeout(5000),
+            });
             if (nestedRes.ok) {
               const nestedXml = await nestedRes.text();
               const nestedResult = parser.parse(nestedXml);
               if (nestedResult.urlset && nestedResult.urlset.url) {
                 const nestedUrlData = nestedResult.urlset.url;
                 if (Array.isArray(nestedUrlData)) {
-                  urls.push(...nestedUrlData.map((u: any) => u.loc).filter(Boolean));
+                  urls.push(
+                    ...nestedUrlData.map((u: any) => u.loc).filter(Boolean),
+                  );
                 } else if (nestedUrlData.loc) {
                   urls.push(nestedUrlData.loc);
                 }
@@ -85,11 +98,19 @@ export class SiteAuditService {
 
       // Limit to max 15 URLs for lightweight check
       const urlsToCheck = urls.slice(0, 15);
-      const issues: Array<{ url: string; severity: string; issueType: string; description: string }> = [];
+      const issues: Array<{
+        url: string;
+        severity: string;
+        issueType: string;
+        description: string;
+      }> = [];
 
       for (const url of urlsToCheck) {
         try {
-          const pageRes = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(5000) });
+          const pageRes = await fetch(url, {
+            method: 'GET',
+            signal: AbortSignal.timeout(5000),
+          });
           if (!pageRes.ok) {
             issues.push({
               url,
@@ -101,7 +122,7 @@ export class SiteAuditService {
           }
 
           const html = await pageRes.text();
-          
+
           // H1 Checks
           const h1Matches = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/gi);
           if (!h1Matches || h1Matches.length === 0) {
@@ -132,9 +153,18 @@ export class SiteAuditService {
           }
 
           // Meta description Check
-          const descriptionMatch = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i) ||
-                                   html.match(/<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["']/i);
-          if (!descriptionMatch || !descriptionMatch[1] || descriptionMatch[1].trim() === '') {
+          const descriptionMatch =
+            html.match(
+              /<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i,
+            ) ||
+            html.match(
+              /<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["']/i,
+            );
+          if (
+            !descriptionMatch ||
+            !descriptionMatch[1] ||
+            descriptionMatch[1].trim() === ''
+          ) {
             issues.push({
               url,
               severity: 'MEDIUM',
@@ -149,7 +179,6 @@ export class SiteAuditService {
               description: `Meta description is too long (${descriptionMatch[1].length} chars). Recommend < 160.`,
             });
           }
-
         } catch (e: any) {
           issues.push({
             url,
@@ -169,7 +198,7 @@ export class SiteAuditService {
             totalUrls: urlsToCheck.length,
           },
         }),
-        ...issues.map(issue =>
+        ...issues.map((issue) =>
           prisma.siteAuditIssue.create({
             data: {
               siteAuditId: audit.id,
@@ -178,7 +207,7 @@ export class SiteAuditService {
               issueType: issue.issueType,
               description: issue.description,
             },
-          })
+          }),
         ),
       ]);
 
@@ -186,7 +215,6 @@ export class SiteAuditService {
         where: { id: audit.id },
         include: { issues: true },
       });
-
     } catch (err: any) {
       await prisma.siteAudit.update({
         where: { id: audit.id },
@@ -198,7 +226,11 @@ export class SiteAuditService {
     }
   }
 
-  async createRestorePoint(clientId: string, snapshotData: string, description?: string) {
+  async createRestorePoint(
+    clientId: string,
+    snapshotData: string,
+    description?: string,
+  ) {
     const client = await prisma.client.findUnique({ where: { id: clientId } });
     if (!client) {
       throw new NotFoundException('Client not found');
@@ -230,7 +262,7 @@ export class SiteAuditService {
 
     if (!recentRestorePoint) {
       throw new PreconditionFailedException(
-        'Attempting to execute a fix without a stored restore-point reference is blocked'
+        'Attempting to execute a fix without a stored restore-point reference is blocked',
       );
     }
 

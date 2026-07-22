@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { db } from '@/lib/db';
 import type { StaffRole } from '@/lib/types';
 
 // ─── Session user shape (mirrors next-auth.d.ts augmentation) ───
@@ -9,6 +10,7 @@ export interface SessionUser {
   name: string;
   email: string;
   role: string;
+  organizationId: string;
   twoFactorEnabled?: boolean;
 }
 
@@ -46,6 +48,7 @@ export async function requireSession(): Promise<AuthResult> {
       name: session.user.name,
       email: session.user.email,
       role: session.user.role,
+      organizationId: session.user.organizationId,
       twoFactorEnabled: session.user.twoFactorEnabled,
     },
   };
@@ -82,6 +85,28 @@ export async function requireRole(...roles: StaffRole[]): Promise<AuthResult> {
  */
 export async function requireOwner(): Promise<AuthResult> {
   return requireRole('OWNER');
+}
+
+export async function requireClientRole(
+  clientId: string,
+  ...roles: StaffRole[]
+): Promise<AuthResult> {
+  const session = roles.length ? await requireRole(...roles) : await requireSession();
+  if (!session.ok) return session;
+
+  const client = await db.client.findFirst({
+    where: { id: clientId, organizationId: session.user.organizationId },
+    select: { id: true },
+  });
+
+  if (!client) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'Client not found' }, { status: 404 }),
+    };
+  }
+
+  return session;
 }
 
 // ─── Role hierarchy for future use ───

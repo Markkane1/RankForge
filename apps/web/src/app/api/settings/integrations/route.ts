@@ -10,10 +10,6 @@ export async function GET() {
   if (!auth.ok) return auth.response;
 
   try {
-    const orgId = auth.user.id; // Using user ID as organization mock for now, wait, no, auth.user doesn't have orgId
-    
-    // In a real app we'd get the user's organizationId
-    // We will just fetch the organization ID from the db for this user
     const { db } = await import("@/lib/db");
     const staffUser = await db.staffUser.findUnique({
       where: { id: auth.user.id },
@@ -37,16 +33,13 @@ export async function GET() {
       dataForSeo.init(),
       localFalcon.init(),
     ]);
-
-    // SendGrid and BrightLocal are mocked here as true/false 
-    // to match the original UI stubs until we build their clients.
     return NextResponse.json({
       GBP: gbp.isConnected,
       WHATSAPP: whatsapp.isConnected,
       DATAFORSEO: dataForSeo.isConnected,
       LOCAL_FALCON: localFalcon.isConnected,
-      BRIGHTLOCAL: true, // Mocked for now
-      SENDGRID: true // Mocked for now
+      BRIGHTLOCAL: Boolean(process.env.BRIGHTLOCAL_API_KEY),
+      SENDGRID: Boolean(process.env.SENDGRID_API_KEY || process.env.RESEND_API_KEY)
     });
   } catch (error) {
     console.error("Integrations GET error:", error);

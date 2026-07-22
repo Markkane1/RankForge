@@ -1,22 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth-guard";
+import { db, withClientTenant } from "@/lib/db";
+import { requireClientRole } from "@/lib/auth-guard";
 import { decryptSecret } from "@/lib/crypto";
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireSession();
-  if (!auth.ok) return auth.response;
-
   try {
     const { id } = await params;
+    const auth = await requireClientRole(id, "OWNER", "COORDINATOR", "VIEWER", "APPROVER");
+    if (!auth.ok) return auth.response;
 
-    const scans = await db.geoGridScanResult.findMany({
-      where: { clientId: id },
-      orderBy: { scanDate: "desc" },
-    });
+    const scans = await withClientTenant(id, (tenantDb) =>
+      tenantDb.geoGridScanResult.findMany({
+        where: { clientId: id },
+        orderBy: { scanDate: "desc" },
+      })
+    );
 
     return NextResponse.json(scans);
   } catch (error) {
@@ -32,11 +33,10 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireSession();
-  if (!auth.ok) return auth.response;
-
   try {
     const { id } = await params;
+    const auth = await requireClientRole(id, "OWNER", "COORDINATOR");
+    if (!auth.ok) return auth.response;
     const { keyword } = await request.json();
 
     if (!keyword) {
@@ -44,10 +44,12 @@ export async function POST(
     }
 
     // Fetch client and GBP profiles
-    const client = await db.client.findUnique({
-      where: { id },
-      include: { gbpProfiles: true },
-    });
+    const client = await withClientTenant(id, (tenantDb) =>
+      tenantDb.client.findUnique({
+        where: { id },
+        include: { gbpProfiles: true },
+      })
+    );
 
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -92,35 +94,41 @@ export async function POST(
     }
 
     if (!scanData) {
-      // Generate simulated grid data
-      const baseLat = 37.7749;
-      const baseLng = -122.4194;
-      let totalRank = 0;
-      for (let x = -1; x <= 1; x++) {
-        for (let y = -1; y <= 1; y++) {
-          const rank = Math.floor(Math.random() * 20) + 1;
-          pointResults.push({
-            lat: baseLat + x * 0.01,
-            lng: baseLng + y * 0.01,
-            rank,
-          });
-          totalRank += rank;
-        }
-      }
-      averageRank = totalRank / 9;
+      return NextResponse.json(
+        { error: "Local Falcon scan unavailable. Configure a valid LOCAL_FALCON credential before saving geo-grid results." },
+        { status: 424 }
+      );
     }
 
-    // Save GeoGridScanResult
-    const scan = await db.geoGridScanResult.create({
-      data: {
-        clientId: id,
+    averageRank = Number(scanData.averageRank ?? scanData.average_rank ?? scanData.report?.average_rank ?? 0);
+    pointResults = scanData.pointResults ?? scanData.points ?? scanData.results ?? scanData;
+    const sourceLineage = {
+      provider: "LOCAL_FALCON",
+      endpoint: "https://api.localfalcon.com/api/v1/reports/run",
+      request: {
+        locationId: profile.gbpLocationId,
         keyword,
-        gridSize: 3,
-        scanDate: new Date(),
-        averageRank: parseFloat(averageRank.toFixed(2)),
-        pointResults,
+        gridSize: "3x3",
+        gridRadius: "1.0mi",
       },
-    });
+      providerRunId: scanData.runId ?? scanData.run_id ?? scanData.report?.id ?? null,
+      rawResponse: scanData,
+    };
+
+    // Save GeoGridScanResult
+    const scan = await withClientTenant(id, (tenantDb) =>
+      tenantDb.geoGridScanResult.create({
+        data: {
+          clientId: id,
+          keyword,
+          gridSize: 3,
+          scanDate: new Date(),
+          averageRank: parseFloat(averageRank.toFixed(2)),
+          pointResults,
+          sourceLineage,
+        },
+      })
+    );
 
     return NextResponse.json(scan);
   } catch (error) {

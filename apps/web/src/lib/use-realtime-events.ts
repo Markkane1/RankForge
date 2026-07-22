@@ -4,13 +4,18 @@ import { useQueryClient } from '@tanstack/react-query';
 import { getSocket, joinRoom, leaveRoom } from '@/lib/realtime';
 import { toast } from 'sonner';
 
+const REALTIME_URL = process.env.NEXT_PUBLIC_REALTIME_URL;
+
 export function useRealtimeEvents() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
+    // ponytail: skip entire socket setup if realtime server not configured
+    if (!REALTIME_URL) return;
+
     const socket = getSocket();
 
-    const handleTaskUpdate = (data: { taskId: string; status: string }) => {
+    const handleTaskUpdate = (_data: { taskId: string; status: string }) => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     };
@@ -35,7 +40,6 @@ export function useRealtimeEvents() {
     socket.on('approval-updated', handleApprovalUpdate);
     socket.on('notification', handleNotification);
 
-    // Join global room
     joinRoom('global');
 
     return () => {

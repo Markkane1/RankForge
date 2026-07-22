@@ -31,24 +31,37 @@ describe('ReportingDiagnosticsService (REQ-M5-01 to REQ-M5-05)', () => {
       providers: [ReportingDiagnosticsService],
     }).compile();
 
-    service = module.get<ReportingDiagnosticsService>(ReportingDiagnosticsService);
+    service = module.get<ReportingDiagnosticsService>(
+      ReportingDiagnosticsService,
+    );
     jest.clearAllMocks();
   });
 
   describe('syncGa4Events (REQ-M5-01)', () => {
-    it('should log conversion entries to leadLogEntry from GA4 events', async () => {
-      (prisma.client.findUnique as jest.Mock).mockResolvedValue({ id: 'client1' });
-      (prisma.leadLogEntry.create as jest.Mock).mockResolvedValue({ id: 'log1' });
+    it('should not write synthetic conversion entries when GA4 sync is not configured', async () => {
+      (prisma.client.findUnique as jest.Mock).mockResolvedValue({
+        id: 'client1',
+      });
+      (prisma.leadLogEntry.create as jest.Mock).mockResolvedValue({
+        id: 'log1',
+      });
 
-      const result = await service.syncGa4Events('client1', 'properties/12345', 'dimension1');
-      expect(result.syncedEventsCount).toBeGreaterThan(0);
-      expect(prisma.leadLogEntry.create).toHaveBeenCalled();
+      const result = await service.syncGa4Events(
+        'client1',
+        'properties/12345',
+        'dimension1',
+      );
+      expect(result.syncedEventsCount).toBe(0);
+      expect(result.status).toBe('NOT_CONFIGURED');
+      expect(prisma.leadLogEntry.create).not.toHaveBeenCalled();
     });
 
     it('should throw BadRequestException if propertyId is missing', async () => {
-      (prisma.client.findUnique as jest.Mock).mockResolvedValue({ id: 'client1' });
+      (prisma.client.findUnique as jest.Mock).mockResolvedValue({
+        id: 'client1',
+      });
       await expect(
-        service.syncGa4Events('client1', '', 'dimension1')
+        service.syncGa4Events('client1', '', 'dimension1'),
       ).rejects.toThrow('GA4 Property ID is required');
     });
   });
@@ -83,9 +96,9 @@ describe('ReportingDiagnosticsService (REQ-M5-01 to REQ-M5-05)', () => {
         baseline: { id: 'base1' },
       });
 
-      await expect(
-        service.captureBaseline('client1')
-      ).rejects.toThrow('Baseline snapshot already exists and is immutable.');
+      await expect(service.captureBaseline('client1')).rejects.toThrow(
+        'Baseline snapshot already exists and is immutable.',
+      );
     });
   });
 
@@ -99,7 +112,9 @@ describe('ReportingDiagnosticsService (REQ-M5-01 to REQ-M5-05)', () => {
         ],
       });
 
-      (prisma.notification.create as jest.Mock).mockResolvedValue({ id: 'notif1' });
+      (prisma.notification.create as jest.Mock).mockResolvedValue({
+        id: 'notif1',
+      });
 
       const result = await service.checkMetricAnomalies('client1');
       expect(result.hasAnomaly).toBe(true);
@@ -133,9 +148,13 @@ describe('ReportingDiagnosticsService (REQ-M5-01 to REQ-M5-05)', () => {
       const result = await service.getDiagnosticChecklist('client1');
       expect(result.diagnosticSteps.length).toBe(2);
       expect(result.diagnosticSteps[0].status).toBe('CRITICAL');
-      expect(result.diagnosticSteps[0].actionTask).toBe('Citations Submission Run');
+      expect(result.diagnosticSteps[0].actionTask).toBe(
+        'Citations Submission Run',
+      );
       expect(result.diagnosticSteps[1].status).toBe('WARNING');
-      expect(result.diagnosticSteps[1].actionTask).toBe('Gbp Review Invites Campaign');
+      expect(result.diagnosticSteps[1].actionTask).toBe(
+        'Gbp Review Invites Campaign',
+      );
     });
   });
 });

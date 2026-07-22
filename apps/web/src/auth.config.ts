@@ -7,6 +7,7 @@ export const authConfig = {
       if (user) {
         token.role = (user as any).role;
         token.userId = user.id;
+        token.organizationId = (user as any).organizationId;
         token.twoFactorEnabled = (user as any).twoFactorEnabled;
         token.twoFactorVerified = (user as any).twoFactorVerified;
       }
@@ -17,6 +18,7 @@ export const authConfig = {
       if (session.user) {
         session.user.id = token.userId as string;
         session.user.role = token.role as string;
+        session.user.organizationId = token.organizationId as string;
         session.user.twoFactorEnabled = token.twoFactorEnabled as boolean;
         session.user.twoFactorVerified = token.twoFactorVerified as boolean;
       }
