@@ -70,5 +70,13 @@ server.log
 !/scripts/
 !/scripts/check-*.js
 
+# Dot directories
+.*/
+.codesight/
+.github/
+.husky/
+.zcode/
+.turbo/
+
 # Documents folder
 /Documents/
