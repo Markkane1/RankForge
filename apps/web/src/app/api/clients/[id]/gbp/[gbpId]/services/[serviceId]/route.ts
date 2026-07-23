@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withClientTenant } from "@/lib/db";
-import { requireRole } from "@/lib/auth-guard";
+import { requireClientRole } from "@/lib/auth-guard";
 import { updateGbpServiceSchema } from "@/lib/validations";
 
 export async function PATCH(
@@ -9,11 +9,11 @@ export async function PATCH(
     params,
   }: { params: Promise<{ id: string; gbpId: string; serviceId: string }> },
 ) {
-  const auth = await requireRole("OWNER", "COORDINATOR");
-  if (!auth.ok) return auth.response;
-
   try {
     const { id: clientId, gbpId, serviceId } = await params;
+    const auth = await requireClientRole(clientId, "OWNER", "COORDINATOR");
+    if (!auth.ok) return auth.response;
+
     const body = await request.json();
 
     const parsed = updateGbpServiceSchema.safeParse(body);
@@ -29,7 +29,7 @@ export async function PATCH(
     const service = await withClientTenant(clientId, (tenantDb) =>
       tenantDb.gbpService.findFirst({
         where: { id: serviceId, gbpProfileId: gbpId, gbpProfile: { clientId } },
-      })
+      }),
     );
 
     if (!service) {
@@ -47,7 +47,7 @@ export async function PATCH(
             isPriceConfirmed: Boolean(isPriceConfirmed),
           }),
         },
-      })
+      }),
     );
 
     return NextResponse.json(updatedService);
@@ -66,17 +66,16 @@ export async function DELETE(
     params,
   }: { params: Promise<{ id: string; gbpId: string; serviceId: string }> },
 ) {
-  const auth = await requireRole("OWNER", "COORDINATOR");
-  if (!auth.ok) return auth.response;
-
   try {
     const { id: clientId, gbpId, serviceId } = await params;
+    const auth = await requireClientRole(clientId, "OWNER", "COORDINATOR");
+    if (!auth.ok) return auth.response;
 
     // Verify ownership
     const service = await withClientTenant(clientId, (tenantDb) =>
       tenantDb.gbpService.findFirst({
         where: { id: serviceId, gbpProfileId: gbpId, gbpProfile: { clientId } },
-      })
+      }),
     );
 
     if (!service) {
@@ -86,7 +85,7 @@ export async function DELETE(
     await withClientTenant(clientId, (tenantDb) =>
       tenantDb.gbpService.delete({
         where: { id: serviceId },
-      })
+      }),
     );
 
     return new NextResponse(null, { status: 204 });

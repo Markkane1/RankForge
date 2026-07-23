@@ -5,7 +5,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 const { auth } = NextAuth(authConfig);
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-const CSRF_EXEMPT_PREFIXES = ['/api/webhooks/', '/api/events/conversion'];
+const CSRF_EXEMPT_PREFIXES = ['/api/webhooks/'];
+const CSRF_EXEMPT_PATHS = new Set(['/api/events/conversion']);
 
 function isSameOrigin(request: NextRequest) {
   const source = request.headers.get('origin') ?? request.headers.get('referer');
@@ -23,6 +24,7 @@ export default function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/api/') &&
     MUTATING_METHODS.has(request.method) &&
     !CSRF_EXEMPT_PREFIXES.some((prefix) => request.nextUrl.pathname.startsWith(prefix)) &&
+    !CSRF_EXEMPT_PATHS.has(request.nextUrl.pathname) &&
     !isSameOrigin(request)
   ) {
     return NextResponse.json({ error: 'Invalid request origin' }, { status: 403 });

@@ -1,9 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import {
-  GBP_OAUTH_SERVICE,
-  LEGACY_GBP_SERVICE,
-  prisma,
-} from '@rankforge/database';
+import { GBP_OAUTH_SERVICE, prisma } from '@rankforge/database';
 import { EncryptionService } from './encryption.service';
 
 @Injectable()
@@ -57,10 +53,7 @@ export class CredentialsService {
     const cred = await prisma.clientCredential.findFirst({
       where: {
         clientId,
-        service:
-          service === GBP_OAUTH_SERVICE
-            ? { in: [GBP_OAUTH_SERVICE, LEGACY_GBP_SERVICE] }
-            : service,
+        service,
         isValid: true,
       },
     });
@@ -96,10 +89,7 @@ export class CredentialsService {
     await prisma.clientCredential.updateMany({
       where: {
         clientId,
-        service:
-          service === GBP_OAUTH_SERVICE
-            ? { in: [GBP_OAUTH_SERVICE, LEGACY_GBP_SERVICE] }
-            : service,
+        service,
       },
       data: { isValid: false },
     });

@@ -74,50 +74,51 @@ enum ClientType {
 }
 
 model Client {
-  id             String                @id @default(cuid())
-  name           String
-  slug           String                @unique
-  businessName   String?
-  phone          String?
-  email          String?
-  website        String?
-  address        String?
-  city           String?
-  state          String?
-  country        String                @default("US")
-  postalCode     String?
-  type           ClientType            @default(SERVICE_AREA_BUSINESS)
-  lifecycleState ClientState           @default(ONBOARDING)
-  notes          String?
-  intakeData     String?               // JSON questionnaire answers from REQ-M1-02
-  isActive       Boolean               @default(true)
-  organizationId String
-  organization   Organization          @relation(fields: [organizationId], references: [id])
-  gbpProfiles    GbpProfile[]
-  assets         ClientAsset[]
-  tasks          Task[]
-  approvals      ApprovalRequest[]
-  changeLog      ChangeLogEntry[]
-  leads          LeadLogEntry[]
-  reviewAsks     ReviewAsk[]
-  reports        MonthlyReport[]
-  keywords       KeywordMapEntry[]
-  competitors    CompetitorBenchmark[]
-  serviceAreas   ServiceArea[]
-  credentials    ClientCredential[]
-  baseline       BaselineSnapshot?
-  portalUsers    ClientPortalUser[]
-  writeAttempts  WriteAttempt[]
-  preferences    ClientPreference[]
-  geoGridScans   GeoGridScanResult[]
-  siteAudits     SiteAudit[]
-  restorePoints  SiteRestorePoint[]
-  pageMatrixEntries PageMatrixEntry[]
-  citations      CitationRecord[]
+  id                    String                 @id @default(cuid())
+  name                  String
+  slug                  String                 @unique
+  businessName          String?
+  phone                 String?
+  email                 String?
+  website               String?
+  address               String?
+  city                  String?
+  state                 String?
+  country               String                 @default("US")
+  postalCode            String?
+  type                  ClientType             @default(SERVICE_AREA_BUSINESS)
+  lifecycleState        ClientState            @default(ONBOARDING)
+  notes                 String?
+  intakeData            String? // JSON questionnaire answers from REQ-M1-02
+  isActive              Boolean                @default(true)
+  organizationId        String
+  organization          Organization           @relation(fields: [organizationId], references: [id])
+  gbpProfiles           GbpProfile[]
+  assets                ClientAsset[]
+  tasks                 Task[]
+  approvals             ApprovalRequest[]
+  changeLog             ChangeLogEntry[]
+  leads                 LeadLogEntry[]
+  reviewAsks            ReviewAsk[]
+  reports               MonthlyReport[]
+  keywords              KeywordMapEntry[]
+  competitors           CompetitorBenchmark[]
+  serviceAreas          ServiceArea[]
+  credentials           ClientCredential[]
+  baseline              BaselineSnapshot?
+  portalUsers           ClientPortalUser[]
+  writeAttempts         WriteAttempt[]
+  preferences           ClientPreference[]
+  geoGridScans          GeoGridScanResult[]
+  siteAudits            SiteAudit[]
+  restorePoints         SiteRestorePoint[]
+  pageMatrixEntries     PageMatrixEntry[]
+  citations             CitationRecord[]
   backlinkOpportunities BacklinkOpportunity[]
-  secondaryReview SecondaryReviewMetric?
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
+  secondaryReview       SecondaryReviewMetric?
+  contentPieces         ContentPiece[]
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 
   @@index([organizationId])
   @@index([lifecycleState])
@@ -125,57 +126,61 @@ model Client {
 
 // ─── GBP Profile ───
 model GbpProfile {
-  id                  String      @id @default(cuid())
-  clientId            String
-  client              Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  gbpAccountId        String?
-  gbpLocationId       String?
-  gbpLocationName     String?
-  primaryCategory     String?
-  secondaryCategories String? // JSON array stored as string
-  description         String?
+  id                     String         @id @default(cuid())
+  clientId               String
+  client                 Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  gbpAccountId           String?
+  gbpLocationId          String?
+  gbpLocationName        String?
+  primaryCategory        String?
+  secondaryCategories    String? // JSON array stored as string
+  description            String?
   websiteUrl             String?
   bookingUrl             String?
   bookingUrlOverrideNote String?
   phone                  String?
   address                String?
-  isVerified             Boolean     @default(false)
-  isSuspended            Boolean     @default(false)
+  isVerified             Boolean        @default(false)
+  isSuspended            Boolean        @default(false)
   lastSyncedAt           DateTime?
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
-  posts               GbpPost[]
-  reviews             GbpReview[]
-  reviewAsks          ReviewAsk[]
-  photos              GbpPhoto[]
-  services            GbpService[]
-  products            GbpProduct[]
-  faqs                GbpFaq[]
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  posts                  GbpPost[]
+  reviews                GbpReview[]
+  reviewAsks             ReviewAsk[]
+  photos                 GbpPhoto[]
+  services               GbpService[]
+  products               GbpProduct[]
+  faqs                   GbpFaq[]
+  leadEvents             LeadLogEntry[]
 }
 
 model GbpFaq {
-  id           String     @id @default(cuid())
-  gbpProfileId String
-  gbpProfile   GbpProfile @relation(fields: [gbpProfileId], references: [id], onDelete: Cascade)
-  question     String
-  answer       String     @db.Text
-  lastTestedAt DateTime?
-  lastVisibilitySource String?
-  lastVisibilityEvidence String? @db.Text
-  passCount    Int        @default(0)
-  failCount    Int        @default(0)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id                     String     @id @default(cuid())
+  gbpProfileId           String
+  gbpProfile             GbpProfile @relation(fields: [gbpProfileId], references: [id], onDelete: Cascade)
+  question               String
+  answer                 String     @db.Text
+  lastTestedAt           DateTime?
+  lastVisibilitySource   String?
+  lastVisibilityEvidence String?    @db.Text
+  passCount              Int        @default(0)
+  failCount              Int        @default(0)
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
 
   @@index([gbpProfileId])
 }
 
 model GbpCategory {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  group     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String    @id @default(cuid())
+  name           String    @unique
+  group          String?
+  attributesJson String?
+  sourceLineage  String? // JSON provider/request/response trace
+  lastSyncedAt   DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }
 
 model GbpProduct {
@@ -212,40 +217,84 @@ model GbpPost {
   updatedAt    DateTime   @updatedAt
 }
 
+model ContentPiece {
+  id                 String                      @id @default(cuid())
+  clientId           String
+  client             Client                      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  sourceKeywordId    String?
+  topic              String
+  primaryKeyword     String
+  title              String
+  brief              String                      @db.Text
+  draftBody          String?                     @db.Text
+  contentType        String                      @default("INFORMATIONAL")
+  status             String                      @default("PLANNED")
+  plagiarismProvider String?
+  similarityScore    Float?
+  similarityEvidence String?                     @db.Text
+  publishedUrl       String?
+  publishedAt        DateTime?
+  statusHistory      ContentPieceStatusHistory[]
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+
+  @@unique([clientId, primaryKeyword])
+  @@index([clientId])
+  @@index([status])
+}
+
+model ContentPieceStatusHistory {
+  id             String       @id @default(cuid())
+  contentPieceId String
+  contentPiece   ContentPiece @relation(fields: [contentPieceId], references: [id], onDelete: Cascade)
+  oldStatus      String?
+  newStatus      String
+  reason         String
+  metadata       String?      @db.Text
+  createdAt      DateTime     @default(now())
+
+  @@index([contentPieceId])
+}
+
 model GbpReview {
-  id           String     @id @default(cuid())
-  gbpProfileId String
-  gbpProfile   GbpProfile @relation(fields: [gbpProfileId], references: [id], onDelete: Cascade)
-  reviewerName String?
-  rating       Int // 1-5
-  content      String?
-  reviewDate   DateTime?
-  replyText    String?
-  repliedAt    DateTime?
-  requiresHumanGate Boolean @default(false)
-  source       String     @default("GOOGLE")
-  createdAt    DateTime   @default(now())
+  id                String     @id @default(cuid())
+  gbpProfileId      String
+  gbpProfile        GbpProfile @relation(fields: [gbpProfileId], references: [id], onDelete: Cascade)
+  reviewerName      String?
+  rating            Int // 1-5
+  content           String?
+  reviewDate        DateTime?
+  replyText         String?
+  repliedAt         DateTime?
+  requiresHumanGate Boolean    @default(false)
+  source            String     @default("GOOGLE")
+  createdAt         DateTime   @default(now())
 }
 
 model ReviewAsk {
-  id             String      @id @default(cuid())
-  clientId       String
-  client         Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  gbpProfileId   String?
-  gbpProfile     GbpProfile? @relation(fields: [gbpProfileId], references: [id], onDelete: SetNull)
-  customerName   String
-  phoneNumber    String?
-  email          String?
-  reviewUrl      String
-  status         String      @default("SCHEDULED") // SCHEDULED, SENT, REMINDER_SENT, OPTED_OUT, FAILED
-  optedOut       Boolean     @default(false)
-  sendAfter      DateTime
-  reminderAfter  DateTime?
-  sentAt         DateTime?
-  remindedAt     DateTime?
-  idempotencyKey String      @unique
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  id              String      @id @default(cuid())
+  clientId        String
+  client          Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  gbpProfileId    String?
+  gbpProfile      GbpProfile? @relation(fields: [gbpProfileId], references: [id], onDelete: SetNull)
+  customerName    String
+  phoneNumber     String?
+  email           String?
+  reviewUrl       String
+  targetReviewUrl String?
+  shortCode       String?     @unique
+  qrCodeDataUrl   String?
+  clickCount      Int         @default(0)
+  lastClickedAt   DateTime?
+  status          String      @default("SCHEDULED") // SCHEDULED, SENT, REMINDER_SENT, OPTED_OUT, FAILED
+  optedOut        Boolean     @default(false)
+  sendAfter       DateTime
+  reminderAfter   DateTime?
+  sentAt          DateTime?
+  remindedAt      DateTime?
+  idempotencyKey  String      @unique
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   @@index([clientId])
   @@index([gbpProfileId])
@@ -264,16 +313,16 @@ model GbpPhoto {
 }
 
 model GeoGridScanResult {
-  id           String   @id @default(cuid())
-  clientId     String
-  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  keyword      String
-  gridSize     Int      // e.g. 3 for 3x3
-  scanDate     DateTime
-  averageRank  Float
-  pointResults Json     // array of {lat,lng,rank}
+  id            String   @id @default(cuid())
+  clientId      String
+  client        Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  keyword       String
+  gridSize      Int // e.g. 3 for 3x3
+  scanDate      DateTime
+  averageRank   Float
+  pointResults  Json // array of {lat,lng,rank}
   sourceLineage Json?
-  createdAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
 
   @@index([clientId])
 }
@@ -309,21 +358,21 @@ model ClientAsset {
 
 // ─── Keyword Map ───
 model KeywordMapEntry {
-  id           String   @id @default(cuid())
-  clientId     String
-  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  keyword      String
-  searchVolume Int?
-  difficulty   Float?
-  intent       String? // INFORMATIONAL, NAVIGATIONAL, COMMERCIAL, TRANSACTIONAL
-  mapPack      Boolean  @default(false)
-  currentRank  Int?
-  targetRank   Int?
-  priority     Int      @default(5) // 1=high, 10=low
-  status       String   @default("ACTIVE") // ACTIVE, ACHIEVED, DROPPED
+  id            String   @id @default(cuid())
+  clientId      String
+  client        Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  keyword       String
+  searchVolume  Int?
+  difficulty    Float?
+  intent        String? // INFORMATIONAL, NAVIGATIONAL, COMMERCIAL, TRANSACTIONAL
+  mapPack       Boolean  @default(false)
+  currentRank   Int?
+  targetRank    Int?
+  priority      Int      @default(5) // 1=high, 10=low
+  status        String   @default("ACTIVE") // ACTIVE, ACHIEVED, DROPPED
   sourceLineage String? // JSON provider/request/response trace
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@index([clientId])
 }
@@ -384,36 +433,36 @@ enum TaskPriority {
 }
 
 model Task {
-  id             String            @id @default(cuid())
-  taskId         String // e.g. "M1-3.1", "M6-STATE-01"
-  clientId       String?
-  client         Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  title          String
-  description    String?
-  module         String // M1, M2, M3, M4, M5, M6, META, CORE
-  sprint         Int? // Sprint number
-  priority       TaskPriority      @default(MEDIUM)
-  status         TaskStatus        @default(NOT_STARTED)
-  assignedToId   String?
-  assignedTo     StaffUser?        @relation("TaskAssignee", fields: [assignedToId], references: [id])
-  requestedById  String?
-  requestedBy    StaffUser?        @relation("TaskRequester", fields: [requestedById], references: [id])
-  scheduledFor   DateTime?
-  startedAt      DateTime?
-  completedAt    DateTime?
-  dueDate        DateTime?
+  id               String            @id @default(cuid())
+  taskId           String // e.g. "M1-3.1", "M6-STATE-01"
+  clientId         String?
+  client           Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  title            String
+  description      String?
+  module           String // M1, M2, M3, M4, M5, M6, META, CORE
+  sprint           Int? // Sprint number
+  priority         TaskPriority      @default(MEDIUM)
+  status           TaskStatus        @default(NOT_STARTED)
+  assignedToId     String?
+  assignedTo       StaffUser?        @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  requestedById    String?
+  requestedBy      StaffUser?        @relation("TaskRequester", fields: [requestedById], references: [id])
+  scheduledFor     DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  dueDate          DateTime?
   dependsOnTaskIds String[]          @default([])
-  result         String? // JSON - outcome of the task
-  errorMessage   String?
-  retryCount     Int               @default(0)
-  maxRetries     Int               @default(3)
-  idempotencyKey String?           @unique
-  isDryRun       Boolean           @default(false)
-  subtasks       Subtask[]
-  logs           TaskLog[]
-  approvals      ApprovalRequest[]
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  result           String? // JSON - outcome of the task
+  errorMessage     String?
+  retryCount       Int               @default(0)
+  maxRetries       Int               @default(3)
+  idempotencyKey   String?           @unique
+  isDryRun         Boolean           @default(false)
+  subtasks         Subtask[]
+  logs             TaskLog[]
+  approvals        ApprovalRequest[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   @@index([clientId])
   @@index([status])
@@ -539,17 +588,22 @@ enum LeadSource {
 }
 
 model LeadLogEntry {
-  id          String     @id @default(cuid())
-  clientId    String
-  client      Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  source      LeadSource
-  value       Float? // Estimated value in USD
-  contactInfo String? // Redacted/encrypted
-  notes       String?
-  convertedAt DateTime?
-  createdAt   DateTime   @default(now())
+  id              String      @id @default(cuid())
+  clientId        String
+  client          Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  gbpProfileId    String?
+  gbpProfile      GbpProfile? @relation(fields: [gbpProfileId], references: [id], onDelete: SetNull)
+  source          LeadSource
+  value           Float? // Estimated value in USD
+  contactInfo     String? // Redacted/encrypted
+  notes           String?
+  providerEventId String?     @unique
+  sourceLineage   String?     @db.Text
+  convertedAt     DateTime?
+  createdAt       DateTime    @default(now())
 
   @@index([clientId])
+  @@index([gbpProfileId])
   @@index([createdAt])
 }
 
@@ -722,14 +776,14 @@ enum ExecutionRoute {
 }
 
 model CapabilityMapping {
-  id               String         @id @default(cuid())
-  capability       String         @unique // e.g., "GBP_POST_CREATE", "REVIEW_REPLY"
-  primaryRoute     ExecutionRoute @default(API)
+  id               String          @id @default(cuid())
+  capability       String          @unique // e.g., "GBP_POST_CREATE", "REVIEW_REPLY"
+  primaryRoute     ExecutionRoute  @default(API)
   fallbackRoute    ExecutionRoute?
-  requiresApproval Boolean        @default(false)
+  requiresApproval Boolean         @default(false)
   description      String?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   @@index([primaryRoute])
 }
@@ -739,7 +793,7 @@ model ClientPreference {
   id        String   @id @default(cuid())
   clientId  String
   client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  tag       String?  // e.g., "TONE_OF_VOICE", "RESTRICTED_WORDS"
+  tag       String? // e.g., "TONE_OF_VOICE", "RESTRICTED_WORDS"
   content   String
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -750,13 +804,13 @@ model ClientPreference {
 
 // ─── Module 6: Playbook Telemetry (Aggregated Intelligence) ───
 model PlaybookTelemetry {
-  id              String   @id @default(cuid())
-  tacticName      String   // e.g., "ADD_SECONDARY_CATEGORY", "WEEKLY_POSTS"
-  industryNiche   String?  // e.g., "Plumbing", "Lawyer"
-  successScore    Float?   // E.g., Rank increase correlated with this tactic
-  anonymizedData  String?  // JSON blob for generalized stats
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String   @id @default(cuid())
+  tacticName     String // e.g., "ADD_SECONDARY_CATEGORY", "WEEKLY_POSTS"
+  industryNiche  String? // e.g., "Plumbing", "Lawyer"
+  successScore   Float? // E.g., Rank increase correlated with this tactic
+  anonymizedData String? // JSON blob for generalized stats
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@index([tacticName])
   @@index([industryNiche])
@@ -764,30 +818,30 @@ model PlaybookTelemetry {
 
 // ─── Module 2: Site Audit & Fix List ───
 model SiteAudit {
-  id           String           @id @default(cuid())
-  clientId     String
-  client       Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  crawlDate    DateTime         @default(now())
-  status       String           @default("PENDING") // PENDING, COMPLETED, FAILED
-  totalUrls    Int              @default(0)
-  issues       SiteAuditIssue[]
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  id        String           @id @default(cuid())
+  clientId  String
+  client    Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  crawlDate DateTime         @default(now())
+  status    String           @default("PENDING") // PENDING, COMPLETED, FAILED
+  totalUrls Int              @default(0)
+  issues    SiteAuditIssue[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
 
   @@index([clientId])
 }
 
 model SiteAuditIssue {
-  id           String      @id @default(cuid())
-  siteAuditId  String
-  siteAudit    SiteAudit   @relation(fields: [siteAuditId], references: [id], onDelete: Cascade)
-  url          String
-  severity     String      // CRITICAL, HIGH, MEDIUM, LOW
-  issueType    String      // BROKEN_LINK, MISSING_H1, MULTIPLE_H1, MISSING_TITLE, META_TOO_LONG, CANNIBALIZATION, etc.
-  description  String?
-  isResolved   Boolean     @default(false)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id          String    @id @default(cuid())
+  siteAuditId String
+  siteAudit   SiteAudit @relation(fields: [siteAuditId], references: [id], onDelete: Cascade)
+  url         String
+  severity    String // CRITICAL, HIGH, MEDIUM, LOW
+  issueType   String // BROKEN_LINK, MISSING_H1, MULTIPLE_H1, MISSING_TITLE, META_TOO_LONG, CANNIBALIZATION, etc.
+  description String?
+  isResolved  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([siteAuditId])
 }
@@ -798,10 +852,10 @@ model SiteRestorePoint {
   clientId     String
   client       Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
   createdAt    DateTime  @default(now())
-  snapshotData String    // JSON containing previous site structure or page data
+  snapshotData String // JSON containing previous site structure or page data
   description  String?
   restoredAt   DateTime? // null if never restored
-  
+
   @@index([clientId])
 }
 
@@ -816,8 +870,8 @@ model PageMatrixEntry {
   targetArea     String?
   priority       Int      @default(5)
   status         String   @default("DRAFT") // DRAFT, READY, PUBLISHED
-  content        String?  // JSON string or HTML text
-  schemaJson     String?  // JSON-LD schema markup
+  content        String? // JSON string or HTML text
+  schemaJson     String? // JSON-LD schema markup
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -830,12 +884,12 @@ model CitationRecord {
   id             String    @id @default(cuid())
   clientId       String
   client         Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  platform       String    // e.g. "Yelp", "YellowPages"
+  platform       String // e.g. "Yelp", "YellowPages"
   url            String?
-  napStatus      String    // e.g. "MATCHING", "MISMATCH", "MISSING"
+  napStatus      String // e.g. "MATCHING", "MISMATCH", "MISSING"
   tier           Int       @default(1) // 1, 2, 3
   status         String    @default("PENDING") // PENDING, SUBMITTED, VERIFIED
-  credentialsRef String?   // Reference to stored credentials mapping
+  credentialsRef String? // Reference to stored credentials mapping
   submittedAt    DateTime?
   lastVerifiedAt DateTime?
   createdAt      DateTime  @default(now())
@@ -845,15 +899,15 @@ model CitationRecord {
 }
 
 model BacklinkOpportunity {
-  id             String   @id @default(cuid())
-  clientId       String
-  client         Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  url            String
-  domainRating   Float?
-  competitorUrl  String
-  status         String   @default("NEW") // NEW, CONTACTED, ACQUIRED, REJECTED
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id            String   @id @default(cuid())
+  clientId      String
+  client        Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  url           String
+  domainRating  Float?
+  competitorUrl String
+  status        String   @default("NEW") // NEW, CONTACTED, ACQUIRED, REJECTED
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@index([clientId])
 }

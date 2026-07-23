@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth-guard";
+import { requireRole, requireSession } from "@/lib/auth-guard";
 
 export async function GET(request: NextRequest) {
   const auth = await requireSession();
@@ -12,9 +12,14 @@ export async function GET(request: NextRequest) {
     const page = Math.max(parseInt(searchParams.get("page") ?? "1", 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(searchParams.get("limit") ?? "20", 10) || 20, 1), 100);
 
-    const where: Record<string, unknown> = {};
-    if (userId) {
-      where.userId = userId;
+    const requestedUserId = userId ?? auth.user.id;
+    if (requestedUserId !== auth.user.id && !["OWNER", "COORDINATOR"].includes(auth.user.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const where: Record<string, unknown> = { userId: requestedUserId };
+    if (requestedUserId !== auth.user.id) {
+      where.user = { organizationId: auth.user.organizationId };
     }
 
     const [items, total, unread] = await Promise.all([
@@ -57,7 +62,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireSession();
+  const auth = await requireRole("OWNER", "COORDINATOR");
   if (!auth.ok) return auth.response;
 
   try {
@@ -75,6 +80,14 @@ export async function POST(request: NextRequest) {
     }
     if (!message || typeof message !== "string") {
       return NextResponse.json({ error: "message is required" }, { status: 400 });
+    }
+
+    const targetUser = await db.staffUser.findFirst({
+      where: { id: userId, organizationId: auth.user.organizationId },
+      select: { id: true },
+    });
+    if (!targetUser) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
     const notification = await db.notification.create({
@@ -135,7 +148,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const result = await db.notification.updateMany({
-      where: { id: { in: idsToUpdate } },
+      where: { id: { in: idsToUpdate }, userId: auth.user.id },
       data: { isRead: true },
     });
 

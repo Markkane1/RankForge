@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withClientTenant } from "@/lib/db";
-import { requireRole } from "@/lib/auth-guard";
+import { requireClientRole } from "@/lib/auth-guard";
 import { gbpProductSchema } from "@/lib/validations";
 
 async function verifyLinkAlive(url: string): Promise<boolean> {
@@ -31,17 +31,22 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; gbpId: string }> },
 ) {
-  const auth = await requireRole("OWNER", "COORDINATOR", "VIEWER");
-  if (!auth.ok) return auth.response;
-
   try {
     const { id: clientId, gbpId } = await params;
+    const auth = await requireClientRole(
+      clientId,
+      "OWNER",
+      "COORDINATOR",
+      "VIEWER",
+      "APPROVER",
+    );
+    if (!auth.ok) return auth.response;
 
     const products = await withClientTenant(clientId, (tenantDb) =>
       tenantDb.gbpProduct.findMany({
         where: { gbpProfileId: gbpId, gbpProfile: { clientId } },
         orderBy: { createdAt: "desc" },
-      })
+      }),
     );
 
     return NextResponse.json(products);
@@ -58,11 +63,11 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; gbpId: string }> },
 ) {
-  const auth = await requireRole("OWNER", "COORDINATOR");
-  if (!auth.ok) return auth.response;
-
   try {
     const { id: clientId, gbpId } = await params;
+    const auth = await requireClientRole(clientId, "OWNER", "COORDINATOR");
+    if (!auth.ok) return auth.response;
+
     const body = await request.json();
 
     const parsed = gbpProductSchema.safeParse(body);
@@ -99,7 +104,7 @@ export async function POST(
     const profile = await withClientTenant(clientId, (tenantDb) =>
       tenantDb.gbpProfile.findUnique({
         where: { id: gbpId, clientId },
-      })
+      }),
     );
 
     if (!profile) {
@@ -117,7 +122,7 @@ export async function POST(
           name: { equals: category, mode: "insensitive" },
         },
         select: { id: true },
-      })
+      }),
     );
 
     if (!service) {
@@ -141,7 +146,7 @@ export async function POST(
           url,
           isUrlValid,
         },
-      })
+      }),
     );
 
     return NextResponse.json(newProduct, { status: 201 });

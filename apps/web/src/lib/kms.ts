@@ -1,5 +1,4 @@
 import { KeyManagementServiceClient } from '@google-cloud/kms';
-import { env } from './env';
 
 let kmsClient: KeyManagementServiceClient | null = null;
 
@@ -19,11 +18,20 @@ export function getKmsKeyName(keyId?: string): string {
     return keyId;
   }
 
-  // Use env defaults if not fully specified
-  const projectId = process.env.GOOGLE_CLOUD_PROJECT || 'default-project';
-  const location = process.env.GCP_KMS_LOCATION || 'global';
-  const keyRing = process.env.GCP_KMS_KEYRING || 'rankforge-keyring';
-  const cryptoKey = keyId || process.env.GCP_KMS_CRYPTOKEY || 'default-key';
+  if (process.env.GCP_KMS_KEY_NAME) {
+    return process.env.GCP_KMS_KEY_NAME;
+  }
+
+  const projectId = process.env.GOOGLE_CLOUD_PROJECT;
+  const location = process.env.GCP_KMS_LOCATION;
+  const keyRing = process.env.GCP_KMS_KEYRING;
+  const cryptoKey = keyId || process.env.GCP_KMS_CRYPTOKEY;
+
+  if (!projectId || !location || !keyRing || !cryptoKey) {
+    throw new Error(
+      'GCP_KMS_KEY_NAME or GOOGLE_CLOUD_PROJECT/GCP_KMS_LOCATION/GCP_KMS_KEYRING/GCP_KMS_CRYPTOKEY is required when web KMS is enabled',
+    );
+  }
 
   return `projects/${projectId}/locations/${location}/keyRings/${keyRing}/cryptoKeys/${cryptoKey}`;
 }

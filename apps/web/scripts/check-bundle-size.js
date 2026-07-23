@@ -1,51 +1,96 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 const { execSync } = require('child_process');
 
-// 250 KB in bytes
+// REQ-NFR-02: initial JS bundle for authenticated routes must be <= 250KB gzipped.
 const MAX_SIZE = 250 * 1024;
 
-console.log('Running bundle analysis...');
+console.log('Checking initial JS bundle budgets...');
 try {
-  execSync('npm run build', { stdio: 'inherit', env: { ...process.env, ANALYZE: 'true' } });
+  execSync('npm run build', {
+    cwd: path.join(__dirname, '..'),
+    stdio: 'inherit',
+    env: process.env,
+  });
 } catch (error) {
   console.error('Build failed');
   process.exit(1);
 }
 
-const chunksDir = path.join(__dirname, '..', '.next', 'static', 'chunks');
+const nextDir = path.join(__dirname, '..', '.next');
+const appServerDir = path.join(nextDir, 'server', 'app');
 
-if (!fs.existsSync(chunksDir)) {
-  console.error('Could not find .next/static/chunks directory');
+if (!fs.existsSync(appServerDir)) {
+  console.error('Could not find .next/server/app directory');
   process.exit(1);
 }
 
-let exceeded = false;
-
-function checkSize(dir) {
-  const files = fs.readdirSync(dir);
-  for (const file of files) {
+function findPageManifests(dir, manifests = []) {
+  for (const file of fs.readdirSync(dir)) {
     const fullPath = path.join(dir, file);
     const stats = fs.statSync(fullPath);
-    
+
     if (stats.isDirectory()) {
-      checkSize(fullPath);
-    } else if (file.endsWith('.js')) {
-      if (stats.size > MAX_SIZE) {
-        const sizeKb = (stats.size / 1024).toFixed(2);
-        console.error(`ERROR: Bundle size budget exceeded!`);
-        console.error(`File ${file} is ${sizeKb}KB (Max allowed is 250KB)`);
-        exceeded = true;
-      }
+      findPageManifests(fullPath, manifests);
+    } else if (file === 'build-manifest.json' && path.basename(dir) === 'page') {
+      manifests.push(fullPath);
     }
+  }
+
+  return manifests;
+}
+
+function routeName(manifestPath) {
+  const routeDir = path.dirname(manifestPath);
+  const relative = path.relative(appServerDir, path.dirname(routeDir));
+  return `/${relative.replaceAll(path.sep, '/')}`.replace(/\/$/, '') || '/';
+}
+
+function initialJsFiles(manifest) {
+  return [...new Set([
+    ...(manifest.polyfillFiles ?? []),
+    ...(manifest.rootMainFiles ?? []),
+    ...Object.values(manifest.pages ?? {}).flat(),
+  ].filter((file) => file.endsWith('.js')))];
+}
+
+let exceeded = false;
+let checked = 0;
+
+for (const manifestPath of findPageManifests(appServerDir)) {
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const files = initialJsFiles(manifest);
+  let total = 0;
+
+  for (const file of files) {
+    const fullPath = path.join(nextDir, file);
+    if (!fs.existsSync(fullPath)) {
+      console.error(`Missing bundle asset referenced by ${manifestPath}: ${file}`);
+      exceeded = true;
+      continue;
+    }
+
+    total += zlib.gzipSync(fs.readFileSync(fullPath)).length;
+  }
+
+  checked += 1;
+  if (total > MAX_SIZE) {
+    const sizeKb = (total / 1024).toFixed(2);
+    console.error('ERROR: Initial JS bundle size budget exceeded!');
+    console.error(`Route ${routeName(manifestPath)} is ${sizeKb}KB gzipped (Max allowed is 250KB)`);
+    exceeded = true;
   }
 }
 
-checkSize(chunksDir);
+if (checked === 0) {
+  console.error('No app page build manifests found');
+  process.exit(1);
+}
 
 if (exceeded) {
   process.exit(1);
 } else {
-  console.log('Bundle size budget verified. All chunks are under 250KB.');
+  console.log(`Bundle size budget verified. ${checked} app route(s) are under 250KB gzipped initial JS.`);
 }

@@ -1,27 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withClientTenant } from "@/lib/db";
-import { requireOwner } from "@/lib/auth-guard";
+import { requireClientRole } from "@/lib/auth-guard";
 import { requireApproval } from "@/lib/approval-guard";
 import { google } from "googleapis";
 import { decryptSecret } from "@/lib/crypto";
-import { GBP_OAUTH_SERVICE, LEGACY_GBP_SERVICE } from "@rankforge/database";
+import { GBP_OAUTH_SERVICE } from "@rankforge/database";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; gbpId: string }> },
 ) {
-  const auth = await requireOwner();
-  if (!auth.ok) return auth.response;
-
   try {
     const { id, gbpId } = await params;
+    const auth = await requireClientRole(id, "OWNER");
+    if (!auth.ok) return auth.response;
 
     // Fetch Client and their GBP Profile
     const client = await withClientTenant(id, (tenantDb) =>
       tenantDb.client.findUnique({
         where: { id },
         include: { gbpProfiles: { where: { id: gbpId } } },
-      })
+      }),
     );
 
     const gbpProfile = client?.gbpProfiles?.[0];
@@ -38,10 +37,10 @@ export async function GET(
       tenantDb.clientCredential.findFirst({
         where: {
           clientId: id,
-          service: { in: [GBP_OAUTH_SERVICE, LEGACY_GBP_SERVICE] },
+          service: GBP_OAUTH_SERVICE,
           isValid: true,
         },
-      })
+      }),
     );
 
     if (!cred) {
@@ -95,7 +94,7 @@ export async function GET(
           tenantDb.gbpProfile.update({
             where: { id: gbpProfile.id },
             data: { isVerified: true },
-          })
+          }),
         );
         return NextResponse.json({
           verified: true,
@@ -117,11 +116,11 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; gbpId: string }> },
 ) {
-  const auth = await requireOwner();
-  if (!auth.ok) return auth.response;
-
   try {
     const { id, gbpId } = await params;
+    const auth = await requireClientRole(id, "OWNER");
+    if (!auth.ok) return auth.response;
+
     const body = await request.json();
     const { method, phoneNumber, verificationId } = body; // method: e.g. "PHONE_CALL", "SMS"
 
@@ -129,7 +128,7 @@ export async function POST(
       tenantDb.client.findUnique({
         where: { id },
         include: { gbpProfiles: { where: { id: gbpId } } },
-      })
+      }),
     );
 
     const gbpProfile = client?.gbpProfiles?.[0];
@@ -149,7 +148,12 @@ export async function POST(
           ? "Requested to complete a GBP verification step."
           : "Requested to start a GBP verification step.",
         requestType: "GBP_VERIFICATION",
-        requestData: { gbpId, method, phoneNumber, verificationId: verificationId ?? null },
+        requestData: {
+          gbpId,
+          method,
+          phoneNumber,
+          verificationId: verificationId ?? null,
+        },
         requestedById: auth.user.id,
       }),
     );

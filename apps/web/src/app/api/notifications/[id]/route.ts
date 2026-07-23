@@ -12,12 +12,10 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    const notification = await db.notification.findUnique({ where: { id } });
-    if (!notification) {
+    const result = await db.notification.deleteMany({ where: { id, userId: auth.user.id } });
+    if (result.count === 0) {
       return NextResponse.json({ error: "Notification not found" }, { status: 404 });
     }
-
-    await db.notification.delete({ where: { id } });
 
     return NextResponse.json({ deleted: true });
   } catch (error) {

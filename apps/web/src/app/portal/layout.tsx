@@ -5,7 +5,7 @@ import { decryptSecret } from "@/lib/crypto";
 import React from "react";
 
 export const metadata = {
-  title: "Client Portal - SEO Delivery Platform",
+  title: "Client Portal - RankForge Platform",
   description: "View your campaign tasks, performance diagnostics, and monthly reports.",
 };
 

@@ -13,6 +13,8 @@ import type {
   NotificationItem,
   GbpProfileData,
   GeoGridScanResult,
+  BacklinkOpportunity,
+  SecondaryReviewMetric,
 } from '@/lib/types';
 
 // ponytail: all routes here are Next.js API routes on the same origin — always use relative paths
@@ -52,14 +54,44 @@ export const getClients = (params?: { state?: string; search?: string }) => {
 export const getClientDetail = (id: string) =>
   fetchJson<ClientDetail>(`/api/clients/${id}`);
 
-export const getGeoGrid = (id: string) =>
-  fetchJson<GeoGridScanResult[]>(`/api/clients/${id}/geo-grid`);
+export const getGeoGrid = (id: string, gbpId?: string) =>
+  fetchJson<GeoGridScanResult[]>(`/api/clients/${id}/geo-grid${gbpId ? `?gbpId=${encodeURIComponent(gbpId)}` : ''}`);
 
-export const runGeoGridScan = (id: string, keyword: string) =>
+export const runCitationAudit = (id: string, locationId: string) =>
+  fetchJson<{ imported: number }>(`/api/clients/${id}/citations/audit`, {
+    method: 'POST',
+    body: JSON.stringify({ locationId }),
+  });
+
+export const submitCitation = (id: string, citationId: string, credentialsRef: string) =>
+  fetchJson<unknown>(`/api/clients/${id}/citations/${citationId}/submit`, {
+    method: 'POST',
+    body: JSON.stringify({ credentialsRef }),
+  });
+
+export const runGeoGridScan = (id: string, keyword: string, gbpId: string) =>
   fetchJson<GeoGridScanResult>(`/api/clients/${id}/geo-grid`, {
     method: 'POST',
-    body: JSON.stringify({ keyword }),
+    body: JSON.stringify({ keyword, gbpId }),
   });
+
+export const runBacklinkGap = (id: string, competitorUrl: string) =>
+  fetchJson<{ imported: number; policy: string }>(`/api/clients/${id}/backlinks/gap`, {
+    method: 'POST',
+    body: JSON.stringify({ competitorUrl }),
+  });
+
+export const runCompetitorScan = (id: string, keywords: string[], locationNames: string[]) =>
+  fetchJson<{ imported?: number; message?: string }>(`/api/clients/${id}/competitors`, {
+    method: 'POST',
+    body: JSON.stringify({ keywords, locationNames }),
+  });
+
+export const getSecondaryReviews = (id: string) =>
+  fetchJson<SecondaryReviewMetric>(`/api/clients/${id}/secondary-reviews`);
+
+export const getBacklinkOpportunities = (id: string) =>
+  fetchJson<BacklinkOpportunity[]>(`/api/clients/${id}/backlinks/gap`);
 
 export const updateClientState = (id: string, state: string) =>
   fetchJson<ClientListItem>(`/api/clients/${id}/state`, {
@@ -71,6 +103,24 @@ export const updateClientNotes = (id: string, notes: string) =>
   fetchJson<ClientListItem>(`/api/clients/${id}/notes`, {
     method: 'PUT',
     body: JSON.stringify({ notes }),
+  });
+
+export const createClientKeyword = (id: string, data: { keyword: string; targetRank?: number; priority?: number }) =>
+  fetchJson<unknown>(`/api/clients/${id}/keywords`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
+export const updateClientKeyword = (id: string, data: { keywordId: string; targetRank?: number; priority?: number; status?: string }) =>
+  fetchJson<unknown>(`/api/clients/${id}/keywords`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+
+export const generateClientPost = (id: string, data: { keyword: string; topic?: string; gbpId: string }) =>
+  fetchJson<unknown>(`/api/clients/${id}/posts/generate`, {
+    method: 'POST',
+    body: JSON.stringify(data),
   });
 
 // ─── Tasks ───
@@ -245,6 +295,10 @@ export const reorderSubtasks = (taskId: string, subtaskIds: string[]) =>
 // ─── GBP Profile ───
 export const getGbpCategories = () =>
   fetchJson<Record<string, string[]>>('/api/gbp/categories');
+export const getGbpCategoryMetadata = () =>
+  fetchJson<{ taxonomy: Record<string, string[]>; attributes: Record<string, string[]>; lastSyncedAt: string | null }>('/api/gbp/categories?includeMeta=1');
+
+export const getGbpOAuthStartUrl = (clientId: string) => `/api/clients/${clientId}/gbp/oauth/start`;
 
 export const createGbpProfile = (clientId: string, data: Record<string, unknown>) =>
   fetchJson<GbpProfileData>(`/api/clients/${clientId}/gbp`, { method: 'POST', body: JSON.stringify(data) });
@@ -281,3 +335,9 @@ export const deleteGbpPhoto = (clientId: string, gbpId: string, photoId: string)
 
 export const getGbpPosts = (clientId: string, gbpId: string) =>
   fetchJson<any[]>(`/api/clients/${clientId}/gbp/${gbpId}/posts`);
+
+export const replyToGbpReview = (clientId: string, gbpId: string, reviewId: string, replyText: string) =>
+  fetchJson<any>(`/api/clients/${clientId}/gbp/${gbpId}/reviews/${reviewId}/reply`, {
+    method: 'POST',
+    body: JSON.stringify({ replyText }),
+  });

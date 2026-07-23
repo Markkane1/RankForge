@@ -30,7 +30,8 @@ DECLARE
     'CitationRecord',
     'BacklinkOpportunity',
     'SecondaryReviewMetric',
-    'ReviewAsk'
+    'ReviewAsk',
+    'ContentPiece'
   ];
   optional_direct_table text;
   optional_direct_tables text[] := ARRAY[

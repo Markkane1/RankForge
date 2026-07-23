@@ -22,12 +22,12 @@ async function seed() {
 
   // ─── Organization ───
   const org = await prisma.organization.upsert({
-    where: { slug: "seo-delivery-agency" },
+    where: { slug: "rankforge-agency" },
     update: {},
     create: {
-      name: "SEO Delivery Agency",
-      slug: "seo-delivery-agency",
-      domain: "seodelivery.agency",
+      name: "RankForge Agency",
+      slug: "rankforge-agency",
+      domain: "rankforge.agency",
     },
   });
 
@@ -215,6 +215,7 @@ async function seed() {
       description:
         "Professional cleaning services for homes and businesses. Trusted by 500+ customers in Dallas-Fort Worth area.",
       gbpLocationName: "SparkleClean Pro - Dallas",
+      bookingUrl: "https://sparkleclean.com/book",
       isVerified: true,
     },
     {
@@ -2027,8 +2028,9 @@ async function seed() {
       title: "Build Status screen showing verified REQ completion",
       module: "META",
       sprint: 0,
-      status: ReqStatus.IN_PROGRESS,
-      blockedBy: "Seed now corrected; automated evidence links still pending",
+      status: ReqStatus.DONE,
+      note:
+        "Evidence: [Build Status screen](/), [Build Status API](/api/build-status). Requirement evidence is checked by the consolidated CI gate.",
     },
     {
       reqId: "REQ-NFR-04",
@@ -2360,17 +2362,21 @@ async function seed() {
     },
     {
       reqId: "REQ-M5-04",
-      title: "Self-correction diagnosis workflow",
-      module: "M5",
-      sprint: 6,
-      status: ReqStatus.NOT_STARTED,
-    },
-    {
-      reqId: "REQ-M5-05",
       title: "Monthly report v2 with competitor comparison",
       module: "M5",
       sprint: 6,
-      status: ReqStatus.DEFERRED,
+      status: ReqStatus.IN_PROGRESS,
+      blockedBy:
+        "Report lineage and PDF sections exist; archive, portal HTML, and access-control proof pending",
+    },
+    {
+      reqId: "REQ-M5-05",
+      title: "Self-correction diagnosis workflow",
+      module: "M5",
+      sprint: 6,
+      status: ReqStatus.IN_PROGRESS,
+      blockedBy:
+        "Diagnosis task generation and checklist order exist; full behavioral tests pending",
     },
     // Scope
     {
@@ -2392,6 +2398,7 @@ async function seed() {
         sprint: r.sprint,
         status: r.status,
         blockedBy: r.blockedBy ?? null,
+        note: r.note ?? null,
       },
       create: r,
     });

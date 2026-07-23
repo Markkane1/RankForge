@@ -67,6 +67,8 @@ server.log
 
 # AI-generated compliance/audit scripts (not part of committed codebase)
 /scripts/
+!/scripts/
+!/scripts/check-*.js
 
 # Documents folder
 /Documents/

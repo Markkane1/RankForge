@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { updateGbpProfile, getGbpCategories } from '@/lib/api';
+import { updateGbpProfile, getGbpCategoryMetadata } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +17,7 @@ import {
 import { ShieldCheck, AlertTriangle, Plus, X, Upload, Image as ImageIcon, ExternalLink, Loader2, Clock, Building2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import type { GbpProfileData } from '@/lib/types';
+import type { CompetitorBenchmark, GbpProfileData } from '@/lib/types';
 import { GbpVerificationWizard } from './gbp-verification-wizard';
 import { GbpPhotosManager } from './gbp-photos-manager';
 
@@ -25,15 +25,63 @@ export interface GbpIntakeFormProps {
   clientId: string;
   gbpId: string;
   initialData?: GbpProfileData;
+  competitorBenchmarks?: CompetitorBenchmark[];
 }
 
-export function GbpIntakeForm({ clientId, gbpId, initialData }: GbpIntakeFormProps) {
+export function getScoredCategoryCandidates(competitorBenchmarks: Pick<CompetitorBenchmark, 'categories' | 'avgRating' | 'photoCount'>[]) {
+  const scored = new Map<string, { category: string; competitorCount: number; ratingTotal: number; ratingCount: number; photoTarget: number }>();
+
+  for (const benchmark of competitorBenchmarks) {
+    if (!benchmark.categories) continue;
+    let categories: string[];
+    try {
+      const parsed = JSON.parse(benchmark.categories);
+      categories = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      categories = benchmark.categories.split(',');
+    }
+
+    for (const category of new Set(categories.map((item) => item.trim()).filter(Boolean))) {
+      const current = scored.get(category) ?? {
+        category,
+        competitorCount: 0,
+        ratingTotal: 0,
+        ratingCount: 0,
+        photoTarget: 0,
+      };
+      current.competitorCount += 1;
+      if (typeof benchmark.avgRating === 'number') {
+        current.ratingTotal += benchmark.avgRating;
+        current.ratingCount += 1;
+      }
+      current.photoTarget = Math.max(current.photoTarget, benchmark.photoCount ?? 0);
+      scored.set(category, current);
+    }
+  }
+
+  return Array.from(scored.values())
+    .map((candidate) => {
+      const avgRating = candidate.ratingCount ? candidate.ratingTotal / candidate.ratingCount : 0;
+      return {
+        category: candidate.category,
+        competitorCount: candidate.competitorCount,
+        avgRating: avgRating ? Number(avgRating.toFixed(1)) : null,
+        photoTarget: candidate.photoTarget || null,
+        score: candidate.competitorCount * 100 + avgRating * 10 + candidate.photoTarget / 10,
+      };
+    })
+    .sort((a, b) => b.score - a.score || a.category.localeCompare(b.category))
+    .slice(0, 5);
+}
+
+export function GbpIntakeForm({ clientId, gbpId, initialData, competitorBenchmarks = [] }: GbpIntakeFormProps) {
   const queryClient = useQueryClient();
-  const { data: taxonomy = {} } = useQuery({
-    queryKey: ['gbpCategories'],
-    queryFn: () => getGbpCategories(),
+  const { data: categoryMetadata } = useQuery({
+    queryKey: ['gbpCategoryMetadata'],
+    queryFn: () => getGbpCategoryMetadata(),
     staleTime: 1000 * 60 * 60 * 24, // 24 hours
   });
+  const taxonomy = categoryMetadata?.taxonomy ?? {};
   const [isClaimed, setIsClaimed] = useState(initialData?.isVerified ?? false);
   const [accountId, setAccountId] = useState(initialData?.gbpAccountId ?? '');
   const [locationId, setLocationId] = useState(initialData?.gbpLocationId ?? '');
@@ -47,6 +95,23 @@ export function GbpIntakeForm({ clientId, gbpId, initialData }: GbpIntakeFormPro
   const [bookingUrlError, setBookingUrlError] = useState<string | null>(null);
   const [hours, setHours] = useState('');
   const [competitors, setCompetitors] = useState<Array<{ name: string; gbpUrl: string }>>([]);
+  const categoryCandidates = useMemo(
+    () => getScoredCategoryCandidates(competitorBenchmarks),
+    [competitorBenchmarks],
+  );
+
+  const selectCandidateCategory = (category: string) => {
+    const parent = Object.entries(taxonomy).find(([, children]) =>
+      children.includes(category),
+    )?.[0];
+    setPrimaryCategory(parent ? `${parent} > ${category}` : category);
+  };
+  const selectedCategoryName = primaryCategory.includes(' > ')
+    ? primaryCategory.split(' > ')[1]
+    : primaryCategory;
+  const syncedAttributes = selectedCategoryName
+    ? categoryMetadata?.attributes[selectedCategoryName] ?? []
+    : [];
 
   const saveMut = useMutation({
     mutationFn: () => updateGbpProfile(clientId, gbpId, {
@@ -129,6 +194,29 @@ export function GbpIntakeForm({ clientId, gbpId, initialData }: GbpIntakeFormPro
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {categoryCandidates.length > 0 && (
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">Competitor-derived candidates</Label>
+              <div className="flex flex-wrap gap-2">
+                {categoryCandidates.map((candidate) => (
+                  <Button
+                    key={candidate.category}
+                    type="button"
+                    variant={primaryCategory.endsWith(candidate.category) ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-auto min-h-8 flex-col items-start gap-0 px-2 py-1 text-left"
+                    onClick={() => selectCandidateCategory(candidate.category)}
+                  >
+                    <span className="text-xs font-medium">{candidate.category}</span>
+                    <span className="text-[10px] font-normal opacity-70">
+                      {candidate.competitorCount} competitors
+                      {candidate.avgRating ? `, ${candidate.avgRating} avg` : ''}
+                    </span>
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label className="text-xs font-medium">Industry (Parent)</Label>
@@ -167,6 +255,25 @@ export function GbpIntakeForm({ clientId, gbpId, initialData }: GbpIntakeFormPro
             <Label className="text-xs font-medium">Secondary Categories</Label>
             <Input className="h-8 text-sm mt-1" value={secondaryCategories} onChange={(e) => setSecondaryCategories(e.target.value)} placeholder="Comma-separated categories" />
           </div>
+          {syncedAttributes.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <Label className="text-xs font-medium">Synced category attributes</Label>
+                {categoryMetadata?.lastSyncedAt && (
+                  <span className="text-[10px] text-muted-foreground">
+                    Synced {new Date(categoryMetadata.lastSyncedAt).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {syncedAttributes.map((attribute) => (
+                  <Badge key={attribute} variant="secondary" className="text-[10px]">
+                    {attribute}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -235,7 +342,11 @@ export function GbpIntakeForm({ clientId, gbpId, initialData }: GbpIntakeFormPro
       </Card>
 
       {/* Section 5: Photos */}
-      <GbpPhotosManager clientId={clientId} gbpId={gbpId} />
+      <GbpPhotosManager
+        clientId={clientId}
+        gbpId={gbpId}
+        competitorBenchmarks={competitorBenchmarks}
+      />
 
       {/* Section 6: Competitor List */}
       <Card>

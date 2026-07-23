@@ -285,6 +285,71 @@ export class PageMatrixService {
     }
   }
 
+  evaluateRichResultsSchema(schemaJson: string | null) {
+    this.validateSchemaJson(schemaJson);
+    const schema = JSON.parse(schemaJson as string);
+    const types = Array.isArray(schema['@type'])
+      ? schema['@type']
+      : [schema['@type']];
+    const localBusinessTypes = [
+      'LocalBusiness',
+      'ProfessionalService',
+      'Store',
+      'Restaurant',
+    ];
+    const hasLocalBusinessType = types.some((type) =>
+      localBusinessTypes.includes(String(type)),
+    );
+    if (!hasLocalBusinessType) {
+      throw new BadRequestException(
+        'Rich Results schema must use a Google-supported LocalBusiness subtype.',
+      );
+    }
+
+    if (schema.address['@type'] !== 'PostalAddress') {
+      throw new BadRequestException(
+        'Rich Results schema address must be PostalAddress.',
+      );
+    }
+
+    for (const field of [
+      'streetAddress',
+      'addressLocality',
+      'addressRegion',
+      'postalCode',
+    ]) {
+      if (!schema.address[field]) {
+        throw new BadRequestException(
+          `Rich Results schema address.${field} is required.`,
+        );
+      }
+    }
+
+    if (schema.geo['@type'] !== 'GeoCoordinates') {
+      throw new BadRequestException(
+        'Rich Results schema geo must be GeoCoordinates.',
+      );
+    }
+
+    if (!schema.url) {
+      throw new BadRequestException('Rich Results schema url is required.');
+    }
+
+    return {
+      provider: 'LOCAL_RICH_RESULTS_EQUIVALENT',
+      schemaType: schema['@type'],
+      checkedFields: [
+        '@context',
+        '@type',
+        'name',
+        'address',
+        'telephone',
+        'geo',
+        'url',
+      ],
+    };
+  }
+
   async getChecklistDetails(
     clientId: string,
     entryId: string,
@@ -342,9 +407,14 @@ export class PageMatrixService {
 
     // 2. Schema Validation
     let schemaValid = false;
+    let richResultsSchema: {
+      provider: string;
+      schemaType: unknown;
+      checkedFields: string[];
+    } | null = null;
     try {
       if (schemaJson) {
-        this.validateSchemaJson(schemaJson);
+        richResultsSchema = this.evaluateRichResultsSchema(schemaJson);
         schemaValid = true;
       } else {
         errors.push('Schema JSON-LD is missing.');
@@ -381,7 +451,7 @@ export class PageMatrixService {
       );
     }
 
-    // 4. Simulated Checks (Mobile responsive, CWV pass, tracking fires)
+    // 4. Mobile, Core Web Vitals, and tracking checks
     const mobileOk = content
       ? content.includes('viewport') ||
         content.includes('mobile') ||
@@ -393,7 +463,14 @@ export class PageMatrixService {
       );
     }
 
-    const cwvPass = true; // Simulated Core Web Vitals audit pass
+    const cwvResult = await this.evaluateCoreWebVitals(
+      this.resolvePageUrl(client.website, slug),
+    );
+    const cwvPass = cwvResult.pass;
+    if (!cwvPass) {
+      errors.push(cwvResult.error);
+    }
+
     const trackingFires = content
       ? content.includes('gtag') ||
         content.includes('analytics') ||
@@ -408,6 +485,7 @@ export class PageMatrixService {
     return {
       titleUnique: isSlugUnique,
       schemaValid,
+      richResultsSchema,
       napExact,
       mobileOk,
       cwvPass,
@@ -415,6 +493,89 @@ export class PageMatrixService {
       allPassed,
       errors,
     };
+  }
+
+  private resolvePageUrl(website: string | null, slug: string) {
+    if (!website) return null;
+    try {
+      return new URL(
+        slug.replace(/^\/+/, ''),
+        website.endsWith('/') ? website : `${website}/`,
+      ).toString();
+    } catch {
+      return null;
+    }
+  }
+
+  private async evaluateCoreWebVitals(pageUrl: string | null) {
+    if (!pageUrl) {
+      return {
+        pass: false,
+        error:
+          'Core Web Vitals check blocked: client website URL is missing or invalid.',
+      };
+    }
+
+    const apiKey = process.env.PAGESPEED_API_KEY;
+    if (!apiKey) {
+      return {
+        pass: false,
+        error:
+          'Core Web Vitals check blocked: PAGESPEED_API_KEY is not configured.',
+      };
+    }
+
+    const apiUrl = new URL(
+      'https://www.googleapis.com/pagespeedonline/v5/runPagespeed',
+    );
+    apiUrl.searchParams.set('url', pageUrl);
+    apiUrl.searchParams.set('strategy', 'mobile');
+    apiUrl.searchParams.set('category', 'performance');
+    apiUrl.searchParams.set('key', apiKey);
+
+    try {
+      const response = await fetch(apiUrl);
+      if (!response.ok) {
+        return {
+          pass: false,
+          error: `Core Web Vitals check failed: PageSpeed API returned ${response.status}.`,
+        };
+      }
+
+      const data = await response.json();
+      const metrics = data?.loadingExperience?.metrics ?? {};
+      const lighthouseScore =
+        data?.lighthouseResult?.categories?.performance?.score;
+      const failedMetric = [
+        'LARGEST_CONTENTFUL_PAINT_MS',
+        'INTERACTION_TO_NEXT_PAINT',
+        'CUMULATIVE_LAYOUT_SHIFT_SCORE',
+      ].find(
+        (metric) =>
+          metrics[metric]?.category && metrics[metric].category !== 'FAST',
+      );
+
+      if (failedMetric) {
+        return {
+          pass: false,
+          error: `Core Web Vitals check failed: ${failedMetric} is ${metrics[failedMetric].category}.`,
+        };
+      }
+
+      if (typeof lighthouseScore === 'number' && lighthouseScore < 0.9) {
+        return {
+          pass: false,
+          error: `Core Web Vitals check failed: mobile performance score ${lighthouseScore} is below 0.90.`,
+        };
+      }
+
+      return { pass: true, error: '' };
+    } catch (e: any) {
+      return {
+        pass: false,
+        error: `Core Web Vitals check failed: ${e.message}`,
+      };
+    }
   }
 
   async trackConversion(

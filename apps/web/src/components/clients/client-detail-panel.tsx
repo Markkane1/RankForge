@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getClientDetail, updateClientState, updateClientNotes, createTask, createLead, getClientAuditTrail, downloadMonthlyReport, getGeoGrid, runGeoGridScan } from '@/lib/api';
+import { getClientDetail, updateClientState, updateClientNotes, createTask, createLead, getClientAuditTrail, downloadMonthlyReport, getGeoGrid, runGeoGridScan, runCitationAudit, submitCitation, runBacklinkGap } from '@/lib/api';
 import { GbpIntakeForm } from '@/components/gbp/gbp-intake-form';
 import { GbpSuspensionWizard } from '@/components/gbp/gbp-suspension-wizard';
 import { useAppStore } from '@/lib/store';
@@ -73,7 +73,7 @@ import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import { formatDistanceToNow, format, isThisMonth } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
-import type { ClientDetail, ClientState, LeadLogEntry } from '@/lib/types';
+import type { CitationRecord, ClientDetail, ClientState, ContentPiece, GbpProfileData, LeadLogEntry } from '@/lib/types';
 import { KeywordTrackerList } from '../keywords/keyword-tracker-list';
 import { CompetitorList } from '../competitors/competitor-list';
 import { GbpServicesManager } from '../gbp/gbp-services-manager';
@@ -688,6 +688,7 @@ export function ClientDetailPanel({ clientId, onClose }: ClientDetailPanelProps)
                   <TabsTrigger value="gbp">GBP Profile</TabsTrigger>
                   <TabsTrigger value="keywords">Keywords</TabsTrigger>
                   <TabsTrigger value="geogrid" className="gap-1.5"><Map className="h-3 w-3" /> Geo-Grid</TabsTrigger>
+                  <TabsTrigger value="content" className="gap-1.5"><FileText className="h-3 w-3" /> Content</TabsTrigger>
                   <TabsTrigger value="tasks">Tasks</TabsTrigger>
                   <TabsTrigger value="activity">Activity</TabsTrigger>
                   <TabsTrigger value="audit-trail">Audit Trail</TabsTrigger>
@@ -737,10 +738,12 @@ export function ClientDetailPanel({ clientId, onClose }: ClientDetailPanelProps)
                           <div className="space-y-1">
                             <p className="text-xs font-semibold uppercase tracking-wider text-pink-600 dark:text-pink-400">Citation Consistency</p>
                             <p className="text-2xl font-bold text-pink-700 dark:text-pink-300">
-                              {client.citationMetrics?.averageScore ?? 85.5}%
+                              {client.citationMetrics?.averageScore === null || client.citationMetrics?.averageScore === undefined
+                                ? 'Not available'
+                                : `${client.citationMetrics.averageScore}%`}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              Across {client.citationMetrics?.totalCitations ?? 12} listing platforms
+                              Across {client.citationMetrics?.totalCitations ?? 0} listing platforms
                             </p>
                           </div>
                           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-pink-100 dark:bg-pink-900/50 text-pink-600 dark:text-pink-400">
@@ -751,7 +754,7 @@ export function ClientDetailPanel({ clientId, onClose }: ClientDetailPanelProps)
                         <div className="w-full bg-pink-100 dark:bg-pink-900/30 h-1.5 rounded-full mt-4 overflow-hidden">
                           <div 
                             className="bg-pink-500 h-full rounded-full transition-all duration-500" 
-                            style={{ width: `${client.citationMetrics?.averageScore ?? 85.5}%` }}
+                            style={{ width: `${client.citationMetrics?.averageScore ?? 0}%` }}
                           />
                         </div>
                       </CardContent>
@@ -794,6 +797,9 @@ export function ClientDetailPanel({ clientId, onClose }: ClientDetailPanelProps)
                       </CardContent>
                     </Card>
                   </div>
+
+                  <CitationWorkflowPanel clientId={clientId} client={client} />
+                  <AuthoritySignalsPanel clientId={clientId} client={client} />
 
                   <Card>
                     <CardHeader className="pb-3">
@@ -963,7 +969,12 @@ export function ClientDetailPanel({ clientId, onClose }: ClientDetailPanelProps)
                               profileName={profile.gbpLocationName || 'Unnamed Location'}
                             />
                           )}
-                          <GbpIntakeForm clientId={clientId} gbpId={profile.id} initialData={profile} />
+                          <GbpIntakeForm
+                            clientId={clientId}
+                            gbpId={profile.id}
+                            initialData={profile}
+                            competitorBenchmarks={client.competitors}
+                          />
                           
                           {/* Services Manager */}
                           <div className="pt-4 border-t border-border/50">
@@ -1170,6 +1181,9 @@ export function ClientDetailPanel({ clientId, onClose }: ClientDetailPanelProps)
                   </Card>
                   </div>
                 </TabsContent>
+                <TabsContent value="content" className="mt-4">
+                  <ContentPipelinePanel client={client} />
+                </TabsContent>
                 <TabsContent value="tasks" className="mt-4">
                   <Card>
                     <CardContent className="pt-6">
@@ -1327,7 +1341,7 @@ export function ClientDetailPanel({ clientId, onClose }: ClientDetailPanelProps)
 
                 {/* Geo-Grid */}
                 <TabsContent value="geogrid" className="mt-4">
-                  <GeoGridTab clientId={clientId} keywords={client.keywords} />
+                  <GeoGridTab clientId={clientId} keywords={client.keywords} gbpProfiles={client.gbpProfiles} />
                 </TabsContent>
               </Tabs>
             </div>
@@ -1356,29 +1370,357 @@ export function ClientDetailPanel({ clientId, onClose }: ClientDetailPanelProps)
 
 // ─── Geo-Grid Tab Component ───
 
+function ContentPipelinePanel({ client }: { client: ClientDetail }) {
+  const pieces = client.contentPieces ?? [];
+  const pendingDrafts = pieces.filter((piece) => piece.status === 'PENDING_APPROVAL');
+  const plannedPieces = pieces.filter((piece) => piece.status === 'PLANNED');
+  const publishedPieces = pieces.filter((piece) => piece.status === 'PUBLISHED');
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-xs font-semibold uppercase text-muted-foreground">Calendar Rows</p>
+            <p className="mt-1 text-2xl font-bold">{plannedPieces.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-xs font-semibold uppercase text-muted-foreground">Draft Approval Queue</p>
+            <p className="mt-1 text-2xl font-bold">{pendingDrafts.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-xs font-semibold uppercase text-muted-foreground">Published</p>
+            <p className="mt-1 text-2xl font-bold">{publishedPieces.length}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Module 4 Calendar & Draft Queue</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {pieces.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No Module 4 content pieces recorded yet.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Topic</TableHead>
+                  <TableHead>Keyword</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Draft / Evidence</TableHead>
+                  <TableHead>Latest Proof</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pieces.map((piece: ContentPiece) => {
+                  const latestStatus = piece.statusHistory?.[0];
+                  return (
+                    <TableRow key={piece.id}>
+                      <TableCell>
+                        <div className="space-y-1">
+                          <p className="font-medium">{piece.title || piece.topic}</p>
+                          <p className="line-clamp-2 max-w-[220px] text-xs text-muted-foreground">{piece.brief}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell>{piece.primaryKeyword}</TableCell>
+                      <TableCell>
+                        <Badge variant={piece.status === 'PUBLISHED' ? 'default' : piece.status === 'PENDING_APPROVAL' ? 'secondary' : 'outline'}>
+                          {piece.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-1 text-xs text-muted-foreground">
+                          <p className="line-clamp-2 max-w-[280px]">
+                            {piece.draftBody ? piece.draftBody : 'Draft not generated yet'}
+                          </p>
+                          {piece.similarityScore !== null && piece.similarityScore !== undefined && (
+                            <p>Similarity: {(piece.similarityScore * 100).toFixed(1)}%</p>
+                          )}
+                          {piece.plagiarismProvider && <p>Provider: {piece.plagiarismProvider}</p>}
+                          {piece.publishedUrl && (
+                            <a href={piece.publishedUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-emerald-700">
+                              Read back <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-1 text-xs text-muted-foreground">
+                          <p>{latestStatus?.reason ?? 'No status proof yet'}</p>
+                          <p>{latestStatus?.createdAt ? format(new Date(latestStatus.createdAt), 'MMM d, yyyy') : format(new Date(piece.updatedAt), 'MMM d, yyyy')}</p>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function CitationWorkflowPanel({ clientId, client }: { clientId: string; client: ClientDetail }) {
+  const queryClient = useQueryClient();
+  const profilesWithLocations = client.gbpProfiles.filter((profile) => profile.gbpLocationId);
+  const [selectedLocationId, setSelectedLocationId] = useState(profilesWithLocations[0]?.gbpLocationId ?? '');
+  const [credentialsRef, setCredentialsRef] = useState('brightlocal-tier1-managed');
+  const tierOneCitations = (client.citations ?? []).filter((citation) => citation.tier === 1);
+  const needsSubmission = tierOneCitations.filter((citation) => citation.status === 'NEEDS_REVIEW' || citation.status === 'PENDING');
+
+  const auditMutation = useMutation({
+    mutationFn: () => runCitationAudit(clientId, selectedLocationId),
+    onSuccess: (result) => {
+      toast.success(`Citation audit imported ${result.imported} listing${result.imported === 1 ? '' : 's'}`);
+      queryClient.invalidateQueries({ queryKey: ['client', clientId] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to run citation audit'),
+  });
+
+  const submitMutation = useMutation({
+    mutationFn: (citationId: string) => submitCitation(clientId, citationId, credentialsRef),
+    onSuccess: () => {
+      toast.success('Citation marked submitted');
+      queryClient.invalidateQueries({ queryKey: ['client', clientId] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to submit citation'),
+  });
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <CardTitle className="text-sm">Citation Workflow</CardTitle>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Select value={selectedLocationId} onValueChange={setSelectedLocationId} disabled={profilesWithLocations.length === 0}>
+              <SelectTrigger className="h-8 w-full sm:w-[220px]">
+                <SelectValue placeholder="Select GBP location" />
+              </SelectTrigger>
+              <SelectContent>
+                {profilesWithLocations.map((profile) => (
+                  <SelectItem key={profile.id} value={profile.gbpLocationId ?? profile.id}>
+                    {profile.gbpLocationName || profile.gbpLocationId}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              disabled={!selectedLocationId || auditMutation.isPending}
+              onClick={() => auditMutation.mutate()}
+            >
+              {auditMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <SearchIcon className="h-4 w-4" />}
+              Run Audit
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+          <div className="space-y-1">
+            <Label htmlFor="citation-credentials-ref">Credentials Reference</Label>
+            <Input
+              id="citation-credentials-ref"
+              value={credentialsRef}
+              onChange={(event) => setCredentialsRef(event.target.value)}
+              placeholder="brightlocal-tier1-managed"
+            />
+          </div>
+          <Badge variant="outline" className="h-8 justify-center">
+            {needsSubmission.length} Tier 1 pending
+          </Badge>
+        </div>
+
+        {tierOneCitations.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No Tier 1 citation records imported yet.</p>
+        ) : (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Platform</TableHead>
+                  <TableHead>NAP</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tierOneCitations.map((citation: CitationRecord) => (
+                  <TableRow key={citation.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{citation.platform}</span>
+                        {citation.url && (
+                          <a href={citation.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${citation.platform}`}>
+                            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                          </a>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{citation.napStatus}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={citation.status === 'VERIFIED' ? 'default' : 'secondary'}>{citation.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="gap-2"
+                        disabled={!credentialsRef.trim() || submitMutation.isPending || citation.status === 'SUBMITTED' || citation.status === 'VERIFIED'}
+                        onClick={() => submitMutation.mutate(citation.id)}
+                      >
+                        {submitMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+                        Submit
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AuthoritySignalsPanel({ clientId, client }: { clientId: string; client: ClientDetail }) {
+  const queryClient = useQueryClient();
+  const [competitorUrl, setCompetitorUrl] = useState(client.competitors.find((competitor) => competitor.competitorUrl)?.competitorUrl ?? '');
+  const backlinkMutation = useMutation({
+    mutationFn: () => runBacklinkGap(clientId, competitorUrl),
+    onSuccess: (result) => {
+      toast.success(`Backlink gap saved ${result.imported} opportunit${result.imported === 1 ? 'y' : 'ies'}`);
+      queryClient.invalidateQueries({ queryKey: ['client', clientId] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to run backlink gap pull'),
+  });
+
+  const secondary = client.secondaryReview;
+  const opportunities = client.backlinkOpportunities ?? [];
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <CardTitle className="text-sm">Authority Signals</CardTitle>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Input
+              value={competitorUrl}
+              onChange={(event) => setCompetitorUrl(event.target.value)}
+              placeholder="https://competitor.example"
+              className="h-8 w-full sm:w-[260px]"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              disabled={!competitorUrl.trim() || backlinkMutation.isPending}
+              onClick={() => backlinkMutation.mutate()}
+            >
+              {backlinkMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingUp className="h-4 w-4" />}
+              Run Gap
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-md border p-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Facebook</p>
+            <p className="mt-1 text-xl font-bold">{secondary?.facebookRating ?? 0}</p>
+            <p className="text-xs text-muted-foreground">{secondary?.facebookCount ?? 0} review(s)</p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Trustpilot</p>
+            <p className="mt-1 text-xl font-bold">{secondary?.trustpilotRating ?? 0}</p>
+            <p className="text-xs text-muted-foreground">{secondary?.trustpilotCount ?? 0} review(s)</p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">Backlink Opportunities</p>
+            <Badge variant="outline">{opportunities.length}</Badge>
+          </div>
+          {opportunities.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No backlink opportunities recorded yet.</p>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>URL</TableHead>
+                    <TableHead>Rating</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {opportunities.map((opportunity) => (
+                    <TableRow key={opportunity.id}>
+                      <TableCell>
+                        <a href={opportunity.url} target="_blank" rel="noopener noreferrer" className="inline-flex max-w-[280px] items-center gap-2 truncate text-emerald-700 underline-offset-2 hover:underline">
+                          <span className="truncate">{opportunity.url}</span>
+                          <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                        </a>
+                      </TableCell>
+                      <TableCell>{opportunity.domainRating ?? '-'}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{opportunity.status}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 interface GeoGridTabProps {
   clientId: string;
   keywords: any[];
+  gbpProfiles: GbpProfileData[];
 }
 
-function GeoGridTab({ clientId, keywords }: GeoGridTabProps) {
+function GeoGridTab({ clientId, keywords, gbpProfiles }: GeoGridTabProps) {
   const queryClient = useQueryClient();
+  const scannableProfiles = gbpProfiles.filter((profile) => profile.gbpLocationId);
+  const [selectedGbpId, setSelectedGbpId] = useState<string>(
+    scannableProfiles.length > 0 ? scannableProfiles[0].id : ''
+  );
   const [selectedKeyword, setSelectedKeyword] = useState<string>(
     keywords.length > 0 ? keywords[0].keyword : ''
   );
 
   // Query scan history
   const { data: scans, isLoading, error } = useQuery({
-    queryKey: ['geo-grid', clientId],
-    queryFn: () => getGeoGrid(clientId),
+    queryKey: ['geo-grid', clientId, selectedGbpId],
+    queryFn: () => getGeoGrid(clientId, selectedGbpId),
+    enabled: Boolean(selectedGbpId),
   });
 
   // Mutation to trigger manual scan
   const scanMutation = useMutation({
-    mutationFn: (keyword: string) => runGeoGridScan(clientId, keyword),
+    mutationFn: (keyword: string) => runGeoGridScan(clientId, keyword, selectedGbpId),
     onSuccess: (newScan) => {
       toast.success(`Geo-grid scan complete for "${newScan.keyword}"!`);
-      queryClient.invalidateQueries({ queryKey: ['geo-grid', clientId] });
+      queryClient.invalidateQueries({ queryKey: ['geo-grid', clientId, selectedGbpId] });
     },
     onError: (err: any) => {
       toast.error(`Scan failed: ${err.message}`);
@@ -1386,7 +1728,7 @@ function GeoGridTab({ clientId, keywords }: GeoGridTabProps) {
   });
 
   const handleRunScan = () => {
-    if (!selectedKeyword) return;
+    if (!selectedKeyword || !selectedGbpId) return;
     scanMutation.mutate(selectedKeyword);
   };
 
@@ -1402,6 +1744,18 @@ function GeoGridTab({ clientId, keywords }: GeoGridTabProps) {
     );
   }
 
+  if (scannableProfiles.length === 0) {
+    return (
+      <Card>
+        <CardContent className="pt-6 flex flex-col items-center justify-center py-8 text-center">
+          <MapPin className="h-10 w-10 text-muted-foreground/20" />
+          <p className="mt-2 text-sm font-medium text-foreground/70">No GBP location available</p>
+          <p className="mt-1 text-xs text-muted-foreground">Connect a GBP profile with a location ID before running geo-grid scans.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   // Filter scans for selected keyword
   const filteredScans = scans ? scans.filter(s => s.keyword === selectedKeyword) : [];
   const latestScan = filteredScans.length > 0 ? filteredScans[0] : null;
@@ -1410,8 +1764,24 @@ function GeoGridTab({ clientId, keywords }: GeoGridTabProps) {
     <div className="space-y-4">
       {/* Selector and Action bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Keyword:</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Location:</span>
+            <Select value={selectedGbpId} onValueChange={setSelectedGbpId}>
+              <SelectTrigger className="w-[220px] h-9 text-xs">
+                <SelectValue placeholder="Select location" />
+              </SelectTrigger>
+              <SelectContent>
+                {scannableProfiles.map((profile) => (
+                  <SelectItem key={profile.id} value={profile.id} className="text-xs">
+                    {profile.gbpLocationName || profile.address || profile.gbpLocationId}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Keyword:</span>
           <Select value={selectedKeyword} onValueChange={setSelectedKeyword}>
             <SelectTrigger className="w-[200px] h-9 text-xs">
               <SelectValue placeholder="Select keyword" />
@@ -1424,13 +1794,14 @@ function GeoGridTab({ clientId, keywords }: GeoGridTabProps) {
               ))}
             </SelectContent>
           </Select>
+          </div>
         </div>
 
         <Button
           size="sm"
           className="h-9 gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all duration-200"
           onClick={handleRunScan}
-          disabled={scanMutation.isPending}
+          disabled={scanMutation.isPending || !selectedGbpId}
         >
           {scanMutation.isPending ? (
             <>

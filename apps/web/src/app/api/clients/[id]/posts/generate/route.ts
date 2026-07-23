@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withClientTenant } from "@/lib/db";
-import { requireOwner } from "@/lib/auth-guard";
+import { requireClientRole } from "@/lib/auth-guard";
 
 function containsPhoneNumber(text: string): boolean {
   return /\b(?:\+?\d[\d\s().-]{7,}\d)\b/.test(text);
@@ -8,31 +8,40 @@ function containsPhoneNumber(text: string): boolean {
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireOwner();
-  if (!auth.ok) return auth.response;
-
   try {
     const { id } = await params;
+    const auth = await requireClientRole(id, "OWNER");
+    if (!auth.ok) return auth.response;
+
     const { keyword, topic, gbpId } = await request.json();
 
     if (!keyword) {
-      return NextResponse.json({ error: "Keyword is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Keyword is required" },
+        { status: 400 },
+      );
     }
 
     if (!gbpId) {
-      return NextResponse.json({ error: "gbpId is required for multi-location clients" }, { status: 400 });
+      return NextResponse.json(
+        { error: "gbpId is required for multi-location clients" },
+        { status: 400 },
+      );
     }
 
     const gbpProfile = await withClientTenant(id, (tenantDb) =>
       tenantDb.gbpProfile.findUnique({
         where: { id: gbpId, clientId: id },
-      })
+      }),
     );
 
     if (!gbpProfile) {
-      return NextResponse.json({ error: "No GBP Profile found for this client" }, { status: 404 });
+      return NextResponse.json(
+        { error: "No GBP Profile found for this client" },
+        { status: 404 },
+      );
     }
 
     // Call standard LLM (e.g. OpenAI)
@@ -41,17 +50,20 @@ export async function POST(
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
-        { error: "Post generation unavailable. Configure OPENAI_API_KEY before creating AI drafts." },
-        { status: 424 }
+        {
+          error:
+            "Post generation unavailable. Configure OPENAI_API_KEY before creating AI drafts.",
+        },
+        { status: 424 },
       );
     }
 
     const prompt = `Write an engaging Google Business Profile update post about "${topic || keyword}". Focus on local SEO for the keyword "${keyword}". Keep it under 100 words.`;
-    
+
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -65,7 +77,10 @@ export async function POST(
       generatedContent = data.choices[0].message.content.trim();
       if (containsPhoneNumber(generatedContent)) {
         return NextResponse.json(
-          { error: "Post compliance failed: body must not contain phone numbers." },
+          {
+            error:
+              "Post compliance failed: body must not contain phone numbers.",
+          },
           { status: 400 },
         );
       }
@@ -84,7 +99,7 @@ export async function POST(
           status: "DRAFT",
           eventType: "STANDARD",
         },
-      })
+      }),
     );
 
     return NextResponse.json(post);
@@ -92,7 +107,7 @@ export async function POST(
     console.error("AI Content Gen Error:", error);
     return NextResponse.json(
       { error: "Failed to generate post" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

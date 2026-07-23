@@ -7,7 +7,7 @@
     "dev": "ts-node --transpile-only src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "cd ../.. && node scripts/check-worker-tenant.js"
+    "test": "cd ../.. && node scripts/check-worker-tenant.js && node -r ts-node/register apps/worker/tests/post-generation.test.ts && node -r ts-node/register apps/worker/tests/faq-monitoring.test.ts && node -r ts-node/register apps/worker/tests/geo-grid.test.ts && node -r ts-node/register apps/worker/tests/gbp-performance.test.ts && node -r ts-node/register apps/worker/tests/google-measurement.test.ts && node -r ts-node/register apps/worker/tests/anomaly-alerts.test.ts && node -r ts-node/register apps/worker/tests/self-correction.test.ts && node -r ts-node/register apps/worker/tests/backlink-gap.test.ts && node -r ts-node/register apps/worker/tests/approval-expiry.test.ts && node -r ts-node/register apps/worker/tests/credential-health.test.ts"
   },
   "dependencies": {
     "@google-cloud/kms": "^5.6.0",

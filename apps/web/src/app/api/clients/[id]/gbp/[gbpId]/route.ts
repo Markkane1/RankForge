@@ -10,14 +10,20 @@ export async function GET(
 ) {
   try {
     const { id: clientId, gbpId } = await params;
-    const auth = await requireClientRole(clientId, "OWNER", "COORDINATOR", "VIEWER", "APPROVER");
+    const auth = await requireClientRole(
+      clientId,
+      "OWNER",
+      "COORDINATOR",
+      "VIEWER",
+      "APPROVER",
+    );
     if (!auth.ok) return auth.response;
 
     const profile = await withClientTenant(clientId, (tenantDb) =>
       tenantDb.gbpProfile.findUnique({
         where: { id: gbpId, clientId },
         include: { reviews: { select: { rating: true } } },
-      })
+      }),
     );
 
     if (!profile) {
@@ -70,7 +76,7 @@ export async function PATCH(
     const profile = await withClientTenant(clientId, (tenantDb) =>
       tenantDb.gbpProfile.findUnique({
         where: { id: gbpId, clientId },
-      })
+      }),
     );
 
     if (!profile) {
@@ -104,7 +110,7 @@ export async function PATCH(
         tenantDb.competitorBenchmark.findMany({
           where: { clientId },
           select: { competitorName: true },
-        })
+        }),
       );
 
       if (
@@ -186,7 +192,10 @@ export async function PATCH(
     }
 
     // ─── 4-EYES APPROVAL GUARDS (`REQ-M6-APPR-01`) ───
-    if (isVerified !== undefined && Boolean(isVerified) !== profile.isVerified) {
+    if (
+      isVerified !== undefined &&
+      Boolean(isVerified) !== profile.isVerified
+    ) {
       await withClientTenant(clientId, (tenantDb) =>
         requireApproval(tenantDb, {
           clientId,
@@ -214,7 +223,7 @@ export async function PATCH(
           title: "Primary Category Change Request",
           description: `Requested to change primary category from '${profile.primaryCategory || "None"}' to '${primaryCategory}'.`,
           requestType: "CATEGORY_CHANGE",
-          requestData: { primaryCategory },
+          requestData: { gbpId, primaryCategory },
           requestedById: auth.user.id,
         }),
       );

@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { decryptSecret } from "@/lib/crypto";
+import { GBP_OAUTH_SERVICE } from "@rankforge/database";
 
 export class GbpClient {
   private organizationId: string;
@@ -10,12 +11,16 @@ export class GbpClient {
   }
 
   async init() {
-    const cred = await db.orgCredential.findFirst({
-      where: { organizationId: this.organizationId, service: "GBP", isValid: true },
+    const cred = await db.clientCredential.findFirst({
+      where: {
+        service: GBP_OAUTH_SERVICE,
+        isValid: true,
+        client: { organizationId: this.organizationId },
+      },
     });
 
     if (cred) {
-      this.apiKey = await decryptSecret(cred.encryptedKey, cred.keyId || undefined);
+      this.apiKey = await decryptSecret(cred.encryptedToken);
     }
   }
 

@@ -54,4 +54,26 @@ describe('middleware CSRF guard', () => {
 
     expect(response.status).toBe(200);
   });
+
+  it('rejects cross-origin browser conversion events', () => {
+    const response = middleware(
+      request('https://rankforge.test/api/events/conversion/browser', {
+        method: 'POST',
+        headers: { origin: 'https://evil.test' },
+      })
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  it('allows same-origin browser conversion events', () => {
+    const response = middleware(
+      request('https://rankforge.test/api/events/conversion/browser', {
+        method: 'POST',
+        headers: { origin: 'https://rankforge.test' },
+      })
+    );
+
+    expect(response.status).toBe(200);
+  });
 });

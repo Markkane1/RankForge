@@ -4,15 +4,21 @@ import { requireClientRole } from "@/lib/auth-guard";
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
-    const auth = await requireClientRole(id, "OWNER", "COORDINATOR", "VIEWER", "APPROVER");
+    const auth = await requireClientRole(
+      id,
+      "OWNER",
+      "COORDINATOR",
+      "VIEWER",
+      "APPROVER",
+    );
     if (!auth.ok) return auth.response;
 
     const client = await withClientTenant(id, (tenantDb) =>
-      tenantDb.client.findUnique({ where: { id } })
+      tenantDb.client.findUnique({ where: { id } }),
     );
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -33,13 +39,18 @@ export async function GET(
           changedById: true,
           createdAt: true,
         },
-      })
+      }),
     );
 
     // ponytail: resolve changedBy names in one batch lookup rather than N queries
-    const uniqueUserIds = [...new Set(entries.map((e) => e.changedById).filter(Boolean))] as string[];
+    const uniqueUserIds = [
+      ...new Set(entries.map((e) => e.changedById).filter(Boolean)),
+    ] as string[];
     const users = uniqueUserIds.length
-      ? await db.staffUser.findMany({ where: { id: { in: uniqueUserIds } }, select: { id: true, name: true } })
+      ? await db.staffUser.findMany({
+          where: { id: { in: uniqueUserIds } },
+          select: { id: true, name: true },
+        })
       : [];
     const userMap = Object.fromEntries(users.map((u) => [u.id, u.name]));
 
@@ -61,7 +72,7 @@ export async function GET(
     console.error("Audit trail API error:", error);
     return NextResponse.json(
       { error: "Failed to load audit trail" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -1,15 +1,31 @@
 import { Worker, QUEUE_NAME, redisConnection, withRetry, IdempotentWriter } from '@rankforge/queue';
-import { prisma } from '@rankforge/database';
+import { GBP_OAUTH_SERVICE, prisma } from '@rankforge/database';
 import * as Sentry from '@sentry/node';
 import crypto from 'crypto';
 import { requireEnv, validateWorkerEnv } from './env';
 import { sendStatusAlert } from './mailer';
+import { MONTHLY_POST_ROTATION, assertPostBodyCompliant } from './post-generation';
+import { fetchFaqVisibility } from './faq-monitoring';
+import { buildGeoGridScanResult } from './geo-grid';
+import { ingestGbpPerformanceLeads } from './gbp-performance';
+import { ingestGa4OrganicSearchConversions, ingestGscOrganicClicks } from './google-measurement';
+import { runMetricAnomalyScanner as runMetricAnomalyScannerWithDeps } from './anomaly-alerts';
+import { createSelfCorrectionDiagnosisTasks as createSelfCorrectionDiagnosisTasksWithDeps } from './self-correction';
+import { fetchDataForSeoBacklinkGap, parseDataForSeoCredentials, upsertBacklinkOpportunities } from './backlink-gap';
+import { expireStaleApprovals } from './approval-expiry';
+import { checkOrgCredentialLiveHealth } from './credential-health';
 
 type WorkerTaskLog = { message: string; task: { title: string } };
 type WorkerKeyword = { keyword: string; priority: number };
 type WorkerGbpProfile = { gbpLocationId: string | null };
 type WorkerLead = { source: string };
 type WorkerClient = { id: string; name: string; organizationId: string };
+type WorkerClientCredential = {
+  encryptedToken: string;
+  refreshToken: string | null;
+  tokenExpiryAt: Date | null;
+};
+type LiveGbpCategory = { name: string; group: string | null; attributes: string[] };
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
@@ -46,6 +62,31 @@ async function decryptSecret(ciphertext: string): Promise<string> {
   const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
   decipher.setAuthTag(authTag);
   return decipher.update(encrypted, undefined, 'utf8') + decipher.final('utf8');
+}
+
+async function getGoogleAccessToken(credential: WorkerClientCredential): Promise<string | null> {
+  const expired = credential.tokenExpiryAt ? credential.tokenExpiryAt.getTime() <= Date.now() : false;
+  if (!expired) return decryptSecret(credential.encryptedToken);
+
+  if (!credential.refreshToken || !process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    return null;
+  }
+
+  const refreshToken = await decryptSecret(credential.refreshToken);
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  });
+  if (!response.ok) return null;
+
+  const payload = await response.json() as { access_token?: string };
+  return payload.access_token ?? null;
 }
 
 function getKmsKeyName(): string {
@@ -143,155 +184,20 @@ async function recordClientCommunication(
   });
 }
 
-async function raiseAnomalyAlert(
-  client: WorkerClient,
-  alert: { type: string; title: string; message: string; sourceRule: string; recommendedAction: string; dedupeKey: string },
-  since: Date,
-) {
-  const existing = await prisma.notification.findFirst({
-    where: { type: alert.type, dedupeKey: alert.dedupeKey, createdAt: { gte: since } },
-  });
-  if (existing) return 0;
-
-  const recipients = await prisma.staffUser.findMany({
-    where: { isActive: true, organizationId: client.organizationId, role: { in: ['OWNER', 'COORDINATOR'] } },
-  });
-  const fallbackRecipients = recipients.length ? recipients : await prisma.staffUser.findMany({ where: { isActive: true } });
-
-  for (const user of fallbackRecipients) {
-    await prisma.notification.create({
-      data: {
-        userId: user.id,
-        type: alert.type,
-        title: alert.title,
-        message: alert.message,
-        sourceRule: alert.sourceRule,
-        recommendedAction: alert.recommendedAction,
-        dedupeKey: alert.dedupeKey,
-        relatedEntityId: client.id,
-        relatedEntityType: 'client',
-      },
-    });
-  }
-  return 1;
-}
-
 async function runMetricAnomalyScanner(dateKey: string) {
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const fourteenDaysAgo = new Date();
-  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-  let anomaliesDetected = 0;
-
-  const clients: WorkerClient[] = await prisma.client.findMany({
-    where: { isActive: true },
-    select: { id: true, name: true, organizationId: true },
-  });
-
-  for (const client of clients) {
-    const scans = await withWorkerClientTenant<any[]>(client.id, (tenantDb) =>
-      tenantDb.geoGridScanResult.findMany({
-        where: { clientId: client.id, scanDate: { gte: fourteenDaysAgo } },
-        orderBy: { scanDate: 'desc' },
-      }),
-    );
-    const seenKeywords = new Set<string>();
-    for (const latest of scans) {
-      if (seenKeywords.has(latest.keyword)) continue;
-      seenKeywords.add(latest.keyword);
-      const previous = scans.find((scan) => scan.keyword === latest.keyword && scan.id !== latest.id);
-      if (!previous) continue;
-      const rankDrop = latest.averageRank - previous.averageRank;
-      if (rankDrop > 5) {
-        anomaliesDetected += await raiseAnomalyAlert(client, {
-          type: 'rank_drop_wow',
-          title: 'Rank Drop Alert',
-          message: `Geo-grid rank dropped by ${rankDrop.toFixed(1)} positions for "${latest.keyword}".`,
-          sourceRule: 'REQ-M5-03: rank drop >5 positions WoW',
-          recommendedAction: 'Review ranking changes, recent GBP edits, and competitor movement for the affected keyword.',
-          dedupeKey: `anomaly:${client.id}:rank:${latest.keyword}:${dateKey}`,
-        }, sevenDaysAgo);
-      }
-    }
-
-    const unexplainedEdits = await withWorkerClientTenant<any[]>(client.id, (tenantDb) =>
-      tenantDb.changeLogEntry.findMany({
-        where: { clientId: client.id, entityType: 'GbpProfile', changedById: null, createdAt: { gte: sevenDaysAgo } },
-      }),
-    );
-    for (const edit of unexplainedEdits) {
-      anomaliesDetected += await raiseAnomalyAlert(client, {
-        type: 'unexplained_profile_edit',
-        title: 'Unexplained GBP Edit Alert',
-        message: `GBP profile field "${edit.field ?? 'unknown'}" changed without an attributed user.`,
-        sourceRule: 'REQ-M5-03: unexplained profile edit',
-        recommendedAction: 'Review the GBP audit trail and confirm whether the edit was expected.',
-        dedupeKey: `anomaly:${client.id}:profile-edit:${edit.id}`,
-      }, sevenDaysAgo);
-    }
-
-    const lowStarReviews = await withWorkerClientTenant<any[]>(client.id, (tenantDb) =>
-      tenantDb.gbpReview.findMany({
-        where: { rating: { lte: 2 }, createdAt: { gte: sevenDaysAgo }, gbpProfile: { clientId: client.id } },
-      }),
-    );
-    for (const review of lowStarReviews) {
-      anomaliesDetected += await raiseAnomalyAlert(client, {
-        type: 'low_star_review',
-        title: 'Low-Star Review Alert',
-        message: `A ${review.rating}-star review needs human handling.`,
-        sourceRule: 'REQ-M5-03: review <=2 stars',
-        recommendedAction: 'Draft a human-reviewed response before any reply is sent.',
-        dedupeKey: `anomaly:${client.id}:review:${review.id}`,
-      }, sevenDaysAgo);
-    }
-
-    const currentCalls = await withWorkerClientTenant<any[]>(client.id, (tenantDb) =>
-      tenantDb.leadLogEntry.findMany({
-        where: { clientId: client.id, source: 'GBP_CALL', createdAt: { gte: sevenDaysAgo } },
-      }),
-    );
-    const previousCalls = await withWorkerClientTenant<any[]>(client.id, (tenantDb) =>
-      tenantDb.leadLogEntry.findMany({
-        where: { clientId: client.id, source: 'GBP_CALL', createdAt: { gte: fourteenDaysAgo, lt: sevenDaysAgo } },
-      }),
-    );
-    const callsDropPercent = previousCalls.length ? ((previousCalls.length - currentCalls.length) / previousCalls.length) * 100 : 0;
-    if (callsDropPercent > 30) {
-      anomaliesDetected += await raiseAnomalyAlert(client, {
-        type: 'calls_down_wow',
-        title: 'Calls Down Alert',
-        message: `GBP calls are down ${callsDropPercent.toFixed(0)} percent week over week.`,
-        sourceRule: 'REQ-M5-03: calls down >30 percent WoW',
-        recommendedAction: 'Audit call tracking, GBP visibility, business hours, and recent profile changes.',
-        dedupeKey: `anomaly:${client.id}:calls:${dateKey}`,
-      }, sevenDaysAgo);
-    }
-
-    const siteIssues = await withWorkerClientTenant<any[]>(client.id, (tenantDb) =>
-      tenantDb.siteAuditIssue.findMany({
-        where: {
-          isResolved: false,
-          issueType: { in: ['BROKEN_LINK', 'HTTP_4XX', 'HTTP_5XX', 'SCHEMA_INVALID', 'CWV_FAIL'] },
-          createdAt: { gte: sevenDaysAgo },
-          siteAudit: { clientId: client.id },
-        },
-      }),
-    );
-    for (const issue of siteIssues) {
-      anomaliesDetected += await raiseAnomalyAlert(client, {
-        type: 'site_health_failure',
-        title: 'Site Health Alert',
-        message: `Site audit reported ${issue.issueType} on ${issue.url}.`,
-        sourceRule: 'REQ-M5-03: site 4xx/5xx/schema invalid/CWV fail',
-        recommendedAction: 'Fix site health blockers before reporting traffic or conversion outcomes.',
-        dedupeKey: `anomaly:${client.id}:site:${issue.id}`,
-      }, sevenDaysAgo);
-    }
-  }
-
+  const anomaliesDetected = await runMetricAnomalyScannerWithDeps({
+    prisma,
+    withClientTenant: withWorkerClientTenant,
+  }, dateKey);
   console.log(`REQ-M5-03 anomaly scan detected ${anomaliesDetected} alert candidate(s).`);
   return anomaliesDetected;
+}
+
+async function createSelfCorrectionDiagnosisTasks(currentYear: number, currentMonth: number) {
+  return createSelfCorrectionDiagnosisTasksWithDeps({
+    prisma,
+    withClientTenant: withWorkerClientTenant,
+  }, currentYear, currentMonth);
 }
 
 async function recordCadenceTask(
@@ -347,6 +253,181 @@ async function recordCadenceTask(
   }
 }
 
+function parseAttributeList(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeLiveGbpCategories(payload: unknown): LiveGbpCategory[] {
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray((payload as { categories?: unknown[] })?.categories)
+      ? (payload as { categories: unknown[] }).categories
+      : [];
+
+  return rows
+    .map((row) => {
+      const category = row as {
+        name?: unknown;
+        displayName?: unknown;
+        group?: unknown;
+        attributes?: unknown;
+      };
+      const name = typeof category.name === 'string'
+        ? category.name.trim()
+        : typeof category.displayName === 'string'
+          ? category.displayName.trim()
+          : '';
+      const attributes = Array.isArray(category.attributes)
+        ? category.attributes
+            .map((attribute) => {
+              if (typeof attribute === 'string') return attribute.trim();
+              const namedAttribute = attribute as { name?: unknown; displayName?: unknown };
+              if (typeof namedAttribute.name === 'string') return namedAttribute.name.trim();
+              if (typeof namedAttribute.displayName === 'string') return namedAttribute.displayName.trim();
+              return '';
+            })
+            .filter(Boolean)
+        : [];
+
+      return {
+        name,
+        group: typeof category.group === 'string' ? category.group : null,
+        attributes: Array.from(new Set(attributes)).sort(),
+      };
+    })
+    .filter((category) => category.name);
+}
+
+async function runQuarterlyCategorySync(now = new Date()): Promise<void> {
+  const quarterKey = `${now.getUTCFullYear()}-Q${Math.floor(now.getUTCMonth() / 3) + 1}`;
+  const sourceUrl = process.env.GBP_CATEGORY_SCHEMA_URL;
+
+  if (!sourceUrl) {
+    console.log('QuarterlyCategorySync skipped: live GBP taxonomy sync is not implemented/configured.');
+    await recordCadenceTask(
+      `QuarterlyCategoryAttributeReview:${quarterKey}`,
+      'Review GBP category and attribute sync source',
+      'Quarterly category/attribute sync review task created because live GBP schema source is not configured.',
+      {
+        status: 'BLOCKED',
+        level: 'WARN',
+        taskId: 'REQ-M1-17',
+        module: 'M1',
+        priority: 'HIGH',
+        result: {
+          requirement: 'REQ-M1-17',
+          blockedBy: 'Live GBP category/attribute schema source is not configured.',
+        },
+      },
+    );
+    await recordCadenceTask(
+      `QuarterlyCategorySync:${now.toISOString().slice(0, 10)}`,
+      'Quarterly category sync cadence proof',
+      'Quarterly category sync blocked: live GBP taxonomy sync is not implemented/configured.',
+      { status: 'BLOCKED', level: 'WARN' },
+    );
+    return;
+  }
+
+  const response = await fetch(sourceUrl, { headers: { Accept: 'application/json' } });
+  if (!response.ok) {
+    throw new Error(`GBP category schema fetch failed: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const categories = normalizeLiveGbpCategories(payload);
+  if (!categories.length) {
+    await recordCadenceTask(
+      `QuarterlyCategorySync:${now.toISOString().slice(0, 10)}`,
+      'Quarterly category sync cadence proof',
+      'Quarterly category sync blocked: live GBP taxonomy source returned no categories.',
+      { status: 'BLOCKED', level: 'WARN', taskId: 'REQ-M1-17', module: 'M1' },
+    );
+    return;
+  }
+
+  const existing = await prisma.gbpCategory.findMany({
+    select: { name: true, attributesJson: true },
+  }) as Array<{ name: string; attributesJson: string | null }>;
+  const existingByName = new Map<string, { name: string; attributesJson: string | null }>(
+    existing.map((category: { name: string; attributesJson: string | null }) => [category.name, category]),
+  );
+  const diffs: Array<{ category: string; newAttributes: string[] }> = [];
+
+  for (const category of categories) {
+    const previousAttributes = parseAttributeList(existingByName.get(category.name)?.attributesJson);
+    const newAttributes = category.attributes.filter((attribute) => !previousAttributes.includes(attribute));
+    if (newAttributes.length) {
+      diffs.push({ category: category.name, newAttributes });
+    }
+
+    await prisma.gbpCategory.upsert({
+      where: { name: category.name },
+      update: {
+        group: category.group,
+        attributesJson: JSON.stringify(category.attributes),
+        sourceLineage: JSON.stringify({
+          provider: 'GBP_CATEGORY_SCHEMA',
+          endpoint: sourceUrl,
+          fetchedAt: now.toISOString(),
+        }),
+        lastSyncedAt: now,
+      },
+      create: {
+        name: category.name,
+        group: category.group,
+        attributesJson: JSON.stringify(category.attributes),
+        sourceLineage: JSON.stringify({
+          provider: 'GBP_CATEGORY_SCHEMA',
+          endpoint: sourceUrl,
+          fetchedAt: now.toISOString(),
+        }),
+        lastSyncedAt: now,
+      },
+    });
+  }
+
+  if (diffs.length) {
+    await recordCadenceTask(
+      `QuarterlyCategoryAttributeReview:${quarterKey}`,
+      'Review new GBP category attributes',
+      `Quarterly category/attribute sync found ${diffs.length} category attribute diff(s) requiring review.`,
+      {
+        status: 'BLOCKED',
+        level: 'WARN',
+        taskId: 'REQ-M1-17',
+        module: 'M1',
+        priority: 'HIGH',
+        result: { requirement: 'REQ-M1-17', diffs },
+      },
+    );
+  }
+
+  await recordCadenceTask(
+    `QuarterlyCategorySync:${now.toISOString().slice(0, 10)}`,
+    'Quarterly category sync cadence proof',
+    `Quarterly category sync imported ${categories.length} live GBP categor${categories.length === 1 ? 'y' : 'ies'}.`,
+    {
+      status: 'DONE',
+      level: 'INFO',
+      taskId: 'REQ-M1-17',
+      module: 'M1',
+      result: {
+        requirement: 'REQ-M1-17',
+        categoriesSynced: categories.length,
+        diffCount: diffs.length,
+        sourceUrl,
+      },
+    },
+  );
+}
+
 async function recordFailedTaskJob(job: { name: string; data?: unknown; attemptsMade: number; opts: { attempts?: number } }, err: Error): Promise<void> {
   if (job.name !== 'UpdateTaskStatus' || !job.data || typeof job.data !== 'object' || !('id' in job.data)) {
     return;
@@ -387,23 +468,6 @@ async function recordFailedTaskJob(job: { name: string; data?: unknown; attempts
     await withWorkerClientTenant(task.clientId, writeFailure);
   } else {
     await writeFailure(prisma);
-  }
-}
-
-const MONTHLY_POST_ROTATION = [
-  { eventType: 'OFFER', instruction: 'Create an offer-style GBP post with no phone number in the body.' },
-  { eventType: 'UPDATE', instruction: 'Create a business update GBP post with no phone number in the body.' },
-  { eventType: 'PROOF', instruction: 'Create a social proof GBP post with no phone number in the body.' },
-  { eventType: 'SEASONAL', instruction: 'Create a seasonal GBP post with no phone number in the body.' },
-] as const;
-
-function containsPhoneNumber(text: string): boolean {
-  return /\b(?:\+?\d[\d\s().-]{7,}\d)\b/.test(text);
-}
-
-function assertPostBodyCompliant(content: string): void {
-  if (containsPhoneNumber(content)) {
-    throw new Error('Post compliance failed: body must not contain phone numbers.');
   }
 }
 
@@ -663,51 +727,12 @@ const worker = new Worker(QUEUE_NAME, async job => {
     }
 
     // REQ-M6-APPR-02: Expire approvals after 30 days
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const approvalsToExpire = await prisma.approvalRequest.findMany({
-      where: {
-        status: 'PENDING',
-        createdAt: { lt: thirtyDaysAgo }
-      },
-      select: { id: true, taskId: true, clientId: true, task: { select: { clientId: true } } }
+    const expiredApprovalCount = await expireStaleApprovals({
+      prisma,
+      withClientTenant: withWorkerClientTenant,
     });
 
-    for (const approval of approvalsToExpire) {
-      const expireApproval = async (db: typeof prisma) => {
-        await db.approvalRequest.update({
-          where: { id: approval.id },
-          data: {
-            status: 'EXPIRED',
-            rejectedReason: 'System: Auto-expired after 30 days of inactivity.'
-          }
-        });
-
-        if (approval.taskId) {
-          await db.task.updateMany({
-            where: { id: approval.taskId, status: 'PENDING_APPROVAL' },
-            data: { status: 'BLOCKED' }
-          });
-          await db.taskLog.create({
-            data: {
-              taskId: approval.taskId,
-              level: 'WARN',
-              message: `Approval expired (ID: ${approval.id}). Task moved to BLOCKED.`
-            }
-          });
-        }
-      };
-
-      const clientId = approval.clientId ?? approval.task?.clientId;
-      if (clientId) {
-        await withWorkerClientTenant(clientId, expireApproval);
-      } else {
-        await expireApproval(prisma);
-      }
-    }
-
-    console.log(`Auto-expired ${approvalsToExpire.length} pending approvals.`);
+    console.log(`Auto-expired ${expiredApprovalCount} pending approvals.`);
 
     let staleTokens = 0;
     const now = new Date();
@@ -716,7 +741,7 @@ const worker = new Worker(QUEUE_NAME, async job => {
     for (const client of activeClients) {
       const orgCredentials = await prisma.orgCredential.findMany({
         where: { organizationId: client.organizationId, isValid: true },
-        select: { id: true, service: true },
+        select: { id: true, service: true, encryptedKey: true },
       });
 
       await withWorkerClientTenant(client.id, async (tenantDb) => {
@@ -769,11 +794,25 @@ const worker = new Worker(QUEUE_NAME, async job => {
         }
 
         for (const cred of orgCredentials) {
+          let level: 'INFO' | 'WARN' = 'INFO';
+          let message = `Org credential ${cred.service}: checked`;
+          try {
+            const liveHealth = await checkOrgCredentialLiveHealth(
+              cred.service,
+              await decryptSecret(cred.encryptedKey),
+            );
+            level = liveHealth.healthy ? 'INFO' : 'WARN';
+            message = liveHealth.message;
+          } catch (error) {
+            level = 'WARN';
+            message = `Org credential ${cred.service}: live ping failed`;
+          }
+
           await tenantDb.taskLog.create({
             data: {
               taskId: healthTask.id,
-              level: 'INFO',
-              message: `Org credential ${cred.service}: checked`,
+              level,
+              message,
             },
           });
         }
@@ -949,31 +988,7 @@ const worker = new Worker(QUEUE_NAME, async job => {
     );
   } else if (job.name === 'QuarterlyCategorySync') {
     console.log('Running quarterly category sync...');
-    console.log('QuarterlyCategorySync skipped: live GBP taxonomy sync is not implemented/configured.');
-    const now = new Date();
-    const quarterKey = `${now.getUTCFullYear()}-Q${Math.floor(now.getUTCMonth() / 3) + 1}`;
-    await recordCadenceTask(
-      `QuarterlyCategoryAttributeReview:${quarterKey}`,
-      'Review GBP category and attribute sync source',
-      'Quarterly category/attribute sync review task created because live GBP schema source is not configured.',
-      {
-        status: 'BLOCKED',
-        level: 'WARN',
-        taskId: 'REQ-M1-17',
-        module: 'M1',
-        priority: 'HIGH',
-        result: {
-          requirement: 'REQ-M1-17',
-          blockedBy: 'Live GBP category/attribute schema source is not configured.',
-        },
-      },
-    );
-    await recordCadenceTask(
-      `QuarterlyCategorySync:${now.toISOString().slice(0, 10)}`,
-      'Quarterly category sync cadence proof',
-      'Quarterly category sync blocked: live GBP taxonomy sync is not implemented/configured.',
-      { status: 'BLOCKED', level: 'WARN' },
-    );
+    await runQuarterlyCategorySync();
   } else if (job.name === 'MonthlyPostGenerator') {
     console.log('Running Monthly Post Generator for all active GBP profiles...');
     const monthKey = new Date().toISOString().slice(0, 7);
@@ -1092,28 +1107,9 @@ const worker = new Worker(QUEUE_NAME, async job => {
     let testedCount = 0;
 
     for (const faq of allFaqs) {
-      const queryUrl = `${process.env.SERP_API_URL}?q=${encodeURIComponent(faq.question)}`;
-      const response = await fetch(queryUrl, {
-        headers: { Authorization: `Bearer ${process.env.SERP_API_KEY}` },
-      });
-      if (!response.ok) continue;
-      const result = await response.json() as {
-        visible?: boolean;
-        position?: number;
-        snippet?: string;
-        url?: string;
-      };
-      const isVisible = Boolean(result.visible);
       const testedAt = new Date();
-      const evidence = {
-        providerUrl: process.env.SERP_API_URL,
-        query: faq.question,
-        visible: isVisible,
-        position: result.position ?? null,
-        snippet: result.snippet ?? null,
-        url: result.url ?? null,
-        testedAt: testedAt.toISOString(),
-      };
+      const evidence = await fetchFaqVisibility(process.env.SERP_API_URL, process.env.SERP_API_KEY, faq.question, testedAt);
+      const isVisible = evidence.visible;
       
       await withWorkerClientTenant(faq.gbpProfile.clientId, (tenantDb) =>
         tenantDb.gbpFaq.update({
@@ -1122,7 +1118,7 @@ const worker = new Worker(QUEUE_NAME, async job => {
             passCount: isVisible ? faq.passCount + 1 : faq.passCount,
             failCount: !isVisible ? faq.failCount + 1 : faq.failCount,
             lastTestedAt: testedAt,
-            lastVisibilitySource: process.env.SERP_API_URL,
+            lastVisibilitySource: evidence.providerUrl,
             lastVisibilityEvidence: JSON.stringify(evidence),
           }
         })
@@ -1160,8 +1156,6 @@ const worker = new Worker(QUEUE_NAME, async job => {
       for (const kw of priorityKeywords) {
         try {
           let scanData: any = null;
-          let averageRank = 0;
-          let pointResults: any[] = [];
 
           const cred = await prisma.orgCredential.findFirst({
             where: { organizationId: client.organizationId, service: "LOCAL_FALCON", isValid: true },
@@ -1198,20 +1192,12 @@ const worker = new Worker(QUEUE_NAME, async job => {
             continue;
           }
 
-          averageRank = Number(scanData.averageRank ?? scanData.average_rank ?? scanData.report?.average_rank ?? 0);
-          pointResults = scanData.pointResults ?? scanData.points ?? scanData.results ?? scanData;
-          const sourceLineage = {
-            provider: 'LOCAL_FALCON',
-            endpoint: 'https://api.localfalcon.com/api/v1/reports/run',
-            request: {
+          const scanResult = buildGeoGridScanResult(scanData, {
               locationId: profile.gbpLocationId,
               keyword: kw.keyword,
               gridSize: '3x3',
               gridRadius: '1.0mi',
-            },
-            providerRunId: scanData.runId ?? scanData.run_id ?? scanData.report?.id ?? null,
-            rawResponse: scanData,
-          };
+          });
 
           await withWorkerClientTenant(client.id, (tenantDb) =>
             tenantDb.geoGridScanResult.create({
@@ -1220,9 +1206,9 @@ const worker = new Worker(QUEUE_NAME, async job => {
                 keyword: kw.keyword,
                 gridSize: 3,
                 scanDate: new Date(),
-                averageRank: parseFloat(averageRank.toFixed(2)),
-                pointResults,
-                sourceLineage,
+                averageRank: scanResult.averageRank,
+                pointResults: scanResult.pointResults,
+                sourceLineage: scanResult.sourceLineage,
               }
             })
           );
@@ -1376,10 +1362,77 @@ const worker = new Worker(QUEUE_NAME, async job => {
       `Monthly competitor policy scan generated ${violationsFound} suggest-edit task(s).`,
       { result: { activeClients: activeClients.length, violationsFound } },
     );
+  } else if (job.name === 'MonthlyBacklinkGapPull') {
+    console.log('Running monthly backlink gap pull...');
+    const dateKey = new Date().toISOString().slice(0, 7);
+    const activeClients = await prisma.client.findMany({
+      where: { isActive: true },
+      include: {
+        competitors: {
+          where: { competitorUrl: { not: null } },
+          orderBy: { analyzedAt: 'desc' },
+          take: 3,
+        },
+      },
+    });
+
+    let clientsChecked = 0;
+    let opportunitiesSaved = 0;
+
+    for (const client of activeClients) {
+      const credential = await prisma.orgCredential.findFirst({
+        where: { organizationId: client.organizationId, service: 'DATAFORSEO', isValid: true },
+      });
+      if (!credential || !client.competitors.length) continue;
+
+      let credentials;
+      try {
+        credentials = parseDataForSeoCredentials(await decryptSecret(credential.encryptedKey));
+      } catch (error) {
+        console.error(`DataForSEO credential decrypt failed for organization ${client.organizationId}:`, error);
+        Sentry.captureException(error);
+        continue;
+      }
+
+      clientsChecked++;
+      for (const competitor of client.competitors) {
+        if (!competitor.competitorUrl) continue;
+        try {
+          const opportunities = await fetchDataForSeoBacklinkGap(credentials, competitor.competitorUrl);
+          opportunitiesSaved += await withWorkerClientTenant(client.id, (tenantDb) =>
+            upsertBacklinkOpportunities(tenantDb, client.id, opportunities),
+          );
+        } catch (error) {
+          console.error(`Backlink gap pull failed for client ${client.id} competitor ${competitor.competitorUrl}:`, error);
+          Sentry.captureException(error);
+        }
+      }
+    }
+
+    await recordCadenceTask(
+      `MonthlyBacklinkGapPull:${dateKey}`,
+      'Monthly backlink gap pull cadence proof',
+      `Monthly backlink gap pull checked ${clientsChecked} client(s) and saved ${opportunitiesSaved} opportunity row(s).`,
+      { result: { activeClients: activeClients.length, clientsChecked, opportunitiesSaved } },
+    );
   } else if (job.name === 'MonthlyConversionOptimizationLoop') {
     console.log('Running Monthly Conversion Optimization Loop...');
     const activeClients = await prisma.client.findMany({
-      where: { isActive: true }
+      where: { isActive: true },
+      include: {
+        gbpProfiles: { select: { id: true, gbpLocationId: true } },
+        assets: {
+          where: { assetType: { in: ['GA4', 'GSC'] }, isVerified: true },
+          select: { assetType: true, externalId: true },
+        },
+        credentials: {
+          where: {
+            service: { in: [GBP_OAUTH_SERVICE, 'GA4', 'GSC'] },
+            isValid: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
     });
 
     const now = new Date();
@@ -1392,8 +1445,84 @@ const worker = new Worker(QUEUE_NAME, async job => {
     const currentMonth = now.getMonth() + 1;
 
     let tasksCreated = 0;
+    let gbpPerformanceLeadEventsCreated = 0;
+    let googleMeasurementLeadEventsCreated = 0;
+    const diagnosisTasksCreated = await createSelfCorrectionDiagnosisTasks(currentYear, currentMonth);
 
     for (const client of activeClients) {
+      const credential = client.credentials.find((cred: WorkerClientCredential & { service?: string }) => cred.service === GBP_OAUTH_SERVICE) as WorkerClientCredential | undefined;
+      if (credential) {
+        const accessToken = await getGoogleAccessToken(credential);
+        if (accessToken) {
+          for (const profile of client.gbpProfiles) {
+            if (!profile.gbpLocationId) continue;
+            try {
+              const ingestion = await withWorkerClientTenant(client.id, (tenantDb) =>
+                ingestGbpPerformanceLeads(tenantDb, {
+                  clientId: client.id,
+                  gbpProfileId: profile.id,
+                  locationName: profile.gbpLocationId,
+                  startDate: sixtyDaysAgo,
+                  endDate: now,
+                  accessToken,
+                  fetchedAt: now,
+                })
+              );
+              gbpPerformanceLeadEventsCreated += ingestion.created;
+            } catch (error) {
+              console.error(`GBP Performance ingestion failed for client ${client.id} profile ${profile.id}:`, error);
+              Sentry.captureException(error);
+            }
+          }
+        }
+      }
+
+      const ga4Asset = client.assets.find((asset: { assetType: string; externalId: string | null }) => asset.assetType === 'GA4' && asset.externalId);
+      const ga4Credential = client.credentials.find((cred: WorkerClientCredential & { service?: string }) => cred.service === 'GA4') as WorkerClientCredential | undefined;
+      if (ga4Asset?.externalId && ga4Credential) {
+        const accessToken = await getGoogleAccessToken(ga4Credential);
+        if (accessToken) {
+          try {
+            googleMeasurementLeadEventsCreated += await withWorkerClientTenant(client.id, (tenantDb) =>
+              ingestGa4OrganicSearchConversions({
+                db: tenantDb,
+                clientId: client.id,
+                propertyId: ga4Asset.externalId!,
+                accessToken,
+                startDate: thirtyDaysAgo,
+                endDate: now,
+              }),
+            );
+          } catch (error) {
+            console.error(`GA4 measurement ingestion failed for client ${client.id}:`, error);
+            Sentry.captureException(error);
+          }
+        }
+      }
+
+      const gscAsset = client.assets.find((asset: { assetType: string; externalId: string | null }) => asset.assetType === 'GSC' && asset.externalId);
+      const gscCredential = client.credentials.find((cred: WorkerClientCredential & { service?: string }) => cred.service === 'GSC') as WorkerClientCredential | undefined;
+      if (gscAsset?.externalId && gscCredential) {
+        const accessToken = await getGoogleAccessToken(gscCredential);
+        if (accessToken) {
+          try {
+            googleMeasurementLeadEventsCreated += await withWorkerClientTenant(client.id, (tenantDb) =>
+              ingestGscOrganicClicks({
+                db: tenantDb,
+                clientId: client.id,
+                siteUrl: gscAsset.externalId!,
+                accessToken,
+                startDate: thirtyDaysAgo,
+                endDate: now,
+              }),
+            );
+          } catch (error) {
+            console.error(`GSC measurement ingestion failed for client ${client.id}:`, error);
+            Sentry.captureException(error);
+          }
+        }
+      }
+
       // Get current period leads
       const currentLeads = await withWorkerClientTenant<WorkerLead[]>(client.id, (tenantDb) =>
         tenantDb.leadLogEntry.findMany({
@@ -1513,12 +1642,12 @@ const worker = new Worker(QUEUE_NAME, async job => {
         console.log(`Created Conversion Optimization task for client: ${client.name} (Weakest step: ${weakest.name})`);
       }
     }
-    console.log(`MonthlyConversionOptimizationLoop completed. Generated ${tasksCreated} experiment suggestion tasks.`);
+    console.log(`MonthlyConversionOptimizationLoop completed. Generated ${tasksCreated} experiment suggestion tasks and ${diagnosisTasksCreated} diagnosis task(s).`);
     await recordCadenceTask(
       `MonthlyConversionOptimizationLoop:${currentYear}-${String(currentMonth).padStart(2, '0')}`,
       'Monthly conversion optimization cadence proof',
-      `Monthly conversion optimization generated ${tasksCreated} experiment task(s).`,
-      { result: { activeClients: activeClients.length, tasksCreated } },
+      `Monthly conversion optimization generated ${tasksCreated} experiment task(s), ${diagnosisTasksCreated} diagnosis task(s), ingested ${gbpPerformanceLeadEventsCreated} GBP Performance lead event(s), and ingested ${googleMeasurementLeadEventsCreated} GA4/GSC organic event(s).`,
+      { result: { activeClients: activeClients.length, tasksCreated, diagnosisTasksCreated, gbpPerformanceLeadEventsCreated, googleMeasurementLeadEventsCreated } },
     );
   }
 }, { connection: redisConnection });

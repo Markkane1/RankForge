@@ -2,30 +2,100 @@ name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: rankforge
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/rankforge?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/rankforge?schema=public
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ci-nextauth-secret-minimum-32-characters
+      TWO_FACTOR_ENCRYPTION_KEY: Y2ktdHdvLWZhY3Rvci1lbmNyeXB0aW9uLWtleS0zMi1ieXRlcw==
+      CONVERSION_EVENT_SECRET: ci-conversion-event-secret
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Use Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18.x'
-        cache: 'npm'
-    
-    - name: Install dependencies
-      run: npm ci
+      - uses: actions/checkout@v3
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18.x"
+          cache: "npm"
 
-    - name: Run validation checks and tests
-      run: npm run check
+      - name: Install dependencies
+        run: npm ci
 
-    - name: Install Playwright Browsers
-      run: npx playwright install --with-deps
+      - name: Prepare seeded database
+        run: |
+          npx prisma migrate deploy --schema packages/database/prisma/schema.prisma
+          node packages/database/prisma/seed.js
 
-    - name: Run Playwright tests
-      run: npx playwright test
+      - name: Run validation checks and tests
+        run: npm run check
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        run: npm run test:e2e --workspace=web
+
+      - name: Verify Lighthouse CI config
+        run: npm run check:lhci --workspace=web
+
+  live-rls:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: rankforge
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/rankforge?schema=public
+      DATABASE_URL: postgresql://rankforge_app:rankforge_app@localhost:5432/rankforge?schema=public
+      RUN_LIVE_RLS: "1"
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18.x"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare owner-migrated database and app role
+        run: |
+          psql "$DIRECT_URL" -c "CREATE ROLE rankforge_app LOGIN PASSWORD 'rankforge_app';"
+          DATABASE_URL="$DIRECT_URL" DIRECT_URL="$DIRECT_URL" npx prisma migrate deploy --schema packages/database/prisma/schema.prisma
+          psql "$DIRECT_URL" -c "GRANT USAGE ON SCHEMA public TO rankforge_app;"
+          psql "$DIRECT_URL" -c "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO rankforge_app;"
+          psql "$DIRECT_URL" -c "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO rankforge_app;"
+
+      - name: Run live RLS isolation test as app role
+        run: npm test --workspace=@rankforge/database -- --run packages/database/tests/integration/rls-isolation.test.ts

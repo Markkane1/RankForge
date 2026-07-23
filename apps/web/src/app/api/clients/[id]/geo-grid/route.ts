@@ -2,62 +2,94 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, withClientTenant } from "@/lib/db";
 import { requireClientRole } from "@/lib/auth-guard";
 import { decryptSecret } from "@/lib/crypto";
+import { z } from "zod";
+
+const runScanSchema = z.object({
+  keyword: z.string().trim().min(1),
+  gbpId: z.string().trim().min(1),
+});
 
 export async function GET(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
-    const auth = await requireClientRole(id, "OWNER", "COORDINATOR", "VIEWER", "APPROVER");
+    const auth = await requireClientRole(
+      id,
+      "OWNER",
+      "COORDINATOR",
+      "VIEWER",
+      "APPROVER",
+    );
     if (!auth.ok) return auth.response;
+    const gbpId = request.nextUrl.searchParams.get("gbpId");
 
     const scans = await withClientTenant(id, (tenantDb) =>
       tenantDb.geoGridScanResult.findMany({
         where: { clientId: id },
         orderBy: { scanDate: "desc" },
-      })
+      }),
     );
 
-    return NextResponse.json(scans);
+    const filteredScans = gbpId
+      ? scans.filter((scan) => {
+          const lineage = scan.sourceLineage as {
+            request?: { gbpProfileId?: string };
+          } | null;
+          return lineage?.request?.gbpProfileId === gbpId;
+        })
+      : scans;
+
+    return NextResponse.json(filteredScans);
   } catch (error) {
     console.error("Geo-grid API error:", error);
     return NextResponse.json(
       { error: "Failed to load geo-grid scans" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
     const auth = await requireClientRole(id, "OWNER", "COORDINATOR");
     if (!auth.ok) return auth.response;
-    const { keyword } = await request.json();
+    const parsed = runScanSchema.safeParse(await request.json());
 
-    if (!keyword) {
-      return NextResponse.json({ error: "Keyword is required" }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          error:
+            "keyword and gbpId are required for multi-location geo-grid scans",
+        },
+        { status: 400 },
+      );
     }
+    const { keyword, gbpId } = parsed.data;
 
     // Fetch client and GBP profiles
     const client = await withClientTenant(id, (tenantDb) =>
       tenantDb.client.findUnique({
         where: { id },
         include: { gbpProfiles: true },
-      })
+      }),
     );
 
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    const profile = client.gbpProfiles.find(p => p.gbpLocationId);
+    const profile = client.gbpProfiles.find((p) => p.id === gbpId);
     if (!profile || !profile.gbpLocationId) {
-      return NextResponse.json({ error: "Client does not have a verified GBP profile with location ID" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Selected GBP profile does not have a location ID" },
+        { status: 400 },
+      );
     }
 
     let scanData: any = null;
@@ -66,25 +98,35 @@ export async function POST(
 
     // Check credentials
     const cred = await db.orgCredential.findFirst({
-      where: { organizationId: client.organizationId, service: "LOCAL_FALCON", isValid: true },
+      where: {
+        organizationId: client.organizationId,
+        service: "LOCAL_FALCON",
+        isValid: true,
+      },
     });
 
     if (cred) {
       try {
-        const apiKey = await decryptSecret(cred.encryptedKey, cred.keyId || undefined);
-        const response = await fetch("https://api.localfalcon.com/api/v1/reports/run", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
+        const apiKey = await decryptSecret(
+          cred.encryptedKey,
+          cred.keyId || undefined,
+        );
+        const response = await fetch(
+          "https://api.localfalcon.com/api/v1/reports/run",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              location_id: profile.gbpLocationId,
+              keyword: keyword,
+              grid_size: "3x3",
+              grid_radius: "1.0mi",
+            }),
           },
-          body: JSON.stringify({
-            location_id: profile.gbpLocationId,
-            keyword: keyword,
-            grid_size: "3x3",
-            grid_radius: "1.0mi",
-          }),
-        });
+        );
         if (response.ok) {
           scanData = await response.json();
         }
@@ -95,23 +137,34 @@ export async function POST(
 
     if (!scanData) {
       return NextResponse.json(
-        { error: "Local Falcon scan unavailable. Configure a valid LOCAL_FALCON credential before saving geo-grid results." },
-        { status: 424 }
+        {
+          error:
+            "Local Falcon scan unavailable. Configure a valid LOCAL_FALCON credential before saving geo-grid results.",
+        },
+        { status: 424 },
       );
     }
 
-    averageRank = Number(scanData.averageRank ?? scanData.average_rank ?? scanData.report?.average_rank ?? 0);
-    pointResults = scanData.pointResults ?? scanData.points ?? scanData.results ?? scanData;
+    averageRank = Number(
+      scanData.averageRank ??
+        scanData.average_rank ??
+        scanData.report?.average_rank ??
+        0,
+    );
+    pointResults =
+      scanData.pointResults ?? scanData.points ?? scanData.results ?? scanData;
     const sourceLineage = {
       provider: "LOCAL_FALCON",
       endpoint: "https://api.localfalcon.com/api/v1/reports/run",
       request: {
+        gbpProfileId: profile.id,
         locationId: profile.gbpLocationId,
         keyword,
         gridSize: "3x3",
         gridRadius: "1.0mi",
       },
-      providerRunId: scanData.runId ?? scanData.run_id ?? scanData.report?.id ?? null,
+      providerRunId:
+        scanData.runId ?? scanData.run_id ?? scanData.report?.id ?? null,
       rawResponse: scanData,
     };
 
@@ -127,7 +180,7 @@ export async function POST(
           pointResults,
           sourceLineage,
         },
-      })
+      }),
     );
 
     return NextResponse.json(scan);
@@ -135,7 +188,7 @@ export async function POST(
     console.error("Geo-grid scan POST error:", error);
     return NextResponse.json(
       { error: "Failed to run geo-grid scan" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

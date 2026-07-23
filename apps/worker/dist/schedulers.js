@@ -44,7 +44,11 @@ async function initSchedulers() {
     await queue_1.taskQueue.add('MonthlyCompetitorPolicyScan', {}, {
         repeat: { pattern: '0 0 1 * *' }
     });
-    // 7. Monthly Conversion Optimization Loop (1st of every month at midnight)
+    // 7. Monthly Backlink Gap Pull (1st of every month at midnight)
+    await queue_1.taskQueue.add('MonthlyBacklinkGapPull', {}, {
+        repeat: { pattern: '0 0 1 * *' }
+    });
+    // 8. Monthly Conversion Optimization Loop (1st of every month at midnight)
     await queue_1.taskQueue.add('MonthlyConversionOptimizationLoop', {}, {
         repeat: { pattern: '0 0 1 * *' }
     });

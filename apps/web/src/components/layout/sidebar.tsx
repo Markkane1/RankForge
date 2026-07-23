@@ -2,7 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/lib/store';
-import type { ViewType } from '@/lib/types';
+import type { ViewType, DashboardData } from '@/lib/types';
 import {
   LayoutDashboard,
   Users,
@@ -32,9 +32,9 @@ const navItems: { view: ViewType; label: string; tooltip: string; icon: React.Re
 export function Sidebar() {
   const { currentView, setCurrentView, sidebarOpen, setSidebarOpen } = useAppStore();
 
-  const { data: dashboard } = useQuery({
+  const { data: dashboard } = useQuery<DashboardData>({
     queryKey: ['dashboard-badge'],
-    queryFn: getDashboard,
+    queryFn: () => getDashboard(),
     refetchInterval: 60000,
   });
 
@@ -56,12 +56,10 @@ export function Sidebar() {
         )}
       </AnimatePresence>
 
-      {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col bg-gradient-to-b from-card via-card to-card/95 transition-transform duration-300 ease-out lg:static lg:translate-x-0 shadow-xl shadow-black/10',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full',
-          !sidebarOpen && 'pointer-events-none'
+          'fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col bg-gradient-to-b from-card via-card to-card/95 transition-transform duration-300 ease-out lg:static lg:translate-x-0 lg:pointer-events-auto shadow-xl shadow-black/10',
+          sidebarOpen ? 'translate-x-0 pointer-events-auto' : '-translate-x-full pointer-events-none lg:pointer-events-auto'
         )}
         style={{ transition: 'transform 0.3s cubic-bezier(0.4,0,0.2,1)' }}
       >
@@ -74,10 +72,10 @@ export function Sidebar() {
         {/* Branding */}
         <div className="flex items-center gap-3 px-4 pt-5 pb-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 animate-[shimmer-bg_3s_ease-in-out_infinite] bg-[length:200%_100%] [background-image:linear-gradient(110deg,from-emerald-500,from-emerald-300,from-emerald-500,to-emerald-700)]">
-            <span className="text-white font-bold text-base">S</span>
+            <span className="text-white font-bold text-base">R</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-bold text-foreground">SEO Delivery</span>
+            <span className="text-sm font-bold text-foreground">RankForge</span>
             <span className="text-[10px] text-muted-foreground">Agency Platform</span>
           </div>
           <Button
@@ -116,29 +114,29 @@ export function Sidebar() {
                         : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
                     )}
                   >
-                {/* Active left indicator bar */}
-                {isActive && (
-                  <motion.div
-                    layoutId="sidebar-active"
-                    className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full bg-emerald-600 shadow-[0_0_8px_rgba(16,185,129,0.3)]"
-                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                  />
-                )}
+                    {/* Active left indicator bar */}
+                    {isActive && (
+                      <motion.div
+                        layoutId="sidebar-active"
+                        className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full bg-emerald-600 shadow-[0_0_8px_rgba(16,185,129,0.3)]"
+                        transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                      />
+                    )}
 
-                <span className={cn(
-                  'transition-colors duration-200',
-                  isActive ? 'text-emerald-600' : 'text-muted-foreground group-hover:text-foreground'
-                )}>
-                  {navItem.icon}
-                </span>
-                <span className="flex-1 text-left">{navItem.label}</span>
+                    <span className={cn(
+                      'transition-colors duration-200',
+                      isActive ? 'text-emerald-600' : 'text-muted-foreground group-hover:text-foreground'
+                    )}>
+                      {navItem.icon}
+                    </span>
+                    <span className="flex-1 text-left">{navItem.label}</span>
 
-                {/* Pending approvals badge */}
-                {navItem.showBadge && pendingApprovals > 0 && (
-                  <Badge className="h-5 min-w-[20px] justify-center bg-amber-500 px-1.5 text-[11px] font-bold text-white hover:bg-amber-600 border-0">
-                    {pendingApprovals}
-                  </Badge>
-                )}
+                    {/* Pending approvals badge */}
+                    {navItem.showBadge && pendingApprovals > 0 && (
+                      <Badge className="h-5 min-w-[20px] justify-center bg-amber-500 px-1.5 text-[11px] font-bold text-white hover:bg-amber-600 border-0">
+                        {pendingApprovals}
+                      </Badge>
+                    )}
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right" sideOffset={12} className="text-xs">
@@ -170,10 +168,10 @@ export function Sidebar() {
           {/* Org name */}
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 text-white text-xs font-bold ring-2 ring-emerald-200 dark:ring-emerald-800">
-              S
+              R
             </div>
             <div className="flex flex-col min-w-0">
-              <p className="text-xs font-semibold truncate">SEO Delivery Agency</p>
+              <p className="text-xs font-semibold truncate">RankForge Agency</p>
               <p className="text-[10px] text-muted-foreground">Organization</p>
             </div>
           </div>

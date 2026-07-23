@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withClientTenant } from "@/lib/db";
-import { requireRole } from "@/lib/auth-guard";
+import { requireClientRole } from "@/lib/auth-guard";
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireRole('OWNER', 'COORDINATOR');
-  if (!auth.ok) return auth.response;
-
   try {
     const { id: clientId } = await params;
+    const auth = await requireClientRole(clientId, "OWNER", "COORDINATOR");
+    if (!auth.ok) return auth.response;
+
     const body = await request.json();
 
     const newProfile = await withClientTenant(clientId, (tenantDb) =>
@@ -22,7 +22,7 @@ export async function POST(
           gbpLocationName: body.gbpLocationName || null,
         },
         include: { reviews: { select: { rating: true } } },
-      })
+      }),
     );
 
     return NextResponse.json(newProfile, { status: 201 });
@@ -30,7 +30,7 @@ export async function POST(
     console.error("GBP profile POST error:", error);
     return NextResponse.json(
       { error: "Failed to create GBP profile" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

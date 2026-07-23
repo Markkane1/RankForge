@@ -40,10 +40,13 @@ async function runFreshnessEngine(prisma: any, fourteenDaysAgo: Date) {
     const latestActivity = new Date(Math.max(...dates.map(d => d.getTime())));
 
     if (latestActivity < fourteenDaysAgo) {
+      const dedupeKey = `freshness:${client.id}:14-day-inactivity`;
+      const sourceRule = 'REQ-M1-26: no ChangeLogEntry, GBP post, or GBP photo activity in 14 days';
+      const recommendedAction = 'Review client activity, publish a GBP post/photo, or document why the client is paused.';
       const recentAlert = await prisma.notification.findFirst({
         where: {
           type: 'client_stale',
-          relatedEntityId: client.id,
+          dedupeKey,
           createdAt: { gte: fourteenDaysAgo }
         }
       });
@@ -56,6 +59,9 @@ async function runFreshnessEngine(prisma: any, fourteenDaysAgo: Date) {
               type: 'client_stale',
               title: '14-Day Inactivity Alert',
               message: `Client ${client.name} has had no activity in the last 14 days.`,
+              sourceRule,
+              recommendedAction,
+              dedupeKey,
               relatedEntityId: client.id,
               relatedEntityType: 'client'
             }
@@ -112,8 +118,16 @@ describe('14-Day Freshness Alert Engine (REQ-M1-26)', () => {
     expect(alerts.length).toBe(1);
     expect(alerts[0].userId).toBe('owner-1');
     expect(alerts[0].type).toBe('client_stale');
+    expect(alerts[0].sourceRule).toBe('REQ-M1-26: no ChangeLogEntry, GBP post, or GBP photo activity in 14 days');
+    expect(alerts[0].recommendedAction).toBe('Review client activity, publish a GBP post/photo, or document why the client is paused.');
+    expect(alerts[0].dedupeKey).toBe('freshness:client-1:14-day-inactivity');
     expect(alerts[0].relatedEntityId).toBe('client-1');
-    expect(mockPrisma.notification.create).toHaveBeenCalled();
+    expect(mockPrisma.notification.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        dedupeKey: 'freshness:client-1:14-day-inactivity',
+        sourceRule: 'REQ-M1-26: no ChangeLogEntry, GBP post, or GBP photo activity in 14 days',
+      }),
+    });
   });
 
   it('should NOT raise an alert if the client had a changelog entry in the last 14 days', async () => {
@@ -181,7 +195,7 @@ describe('14-Day Freshness Alert Engine (REQ-M1-26)', () => {
         findMany: vi.fn().mockResolvedValue([mockUser]),
       },
       notification: {
-        findFirst: vi.fn().mockResolvedValue({ id: 'alert-old', type: 'client_stale' }),
+        findFirst: vi.fn().mockResolvedValue({ id: 'alert-old', type: 'client_stale', dedupeKey: 'freshness:client-3:14-day-inactivity' }),
         create: vi.fn(),
       }
     };
@@ -189,6 +203,13 @@ describe('14-Day Freshness Alert Engine (REQ-M1-26)', () => {
     const alerts = await runFreshnessEngine(mockPrisma, fourteenDaysAgo);
 
     expect(alerts.length).toBe(0);
+    expect(mockPrisma.notification.findFirst).toHaveBeenCalledWith({
+      where: {
+        type: 'client_stale',
+        dedupeKey: 'freshness:client-3:14-day-inactivity',
+        createdAt: { gte: fourteenDaysAgo },
+      },
+    });
     expect(mockPrisma.notification.create).not.toHaveBeenCalled();
   });
 });

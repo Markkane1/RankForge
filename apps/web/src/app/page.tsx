@@ -1,6 +1,7 @@
 'use client';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import dynamic from 'next/dynamic';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
 import type { ViewType } from '@/lib/types';
@@ -10,15 +11,38 @@ import { Button } from '@/components/ui/button';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
 import { useRealtimeEvents } from '@/lib/use-realtime-events';
-import { DashboardView } from '@/components/dashboard/dashboard-view';
-import { ClientsView } from '@/components/clients/clients-view';
-import { TasksView } from '@/components/tasks/tasks-view';
-import { ApprovalsView } from '@/components/approvals/approvals-view';
-import { BuildStatusView } from '@/components/build-status/build-status-view';
-import { SettingsView } from '@/components/settings/settings-view';
 import { CommandPalette } from '@/components/command-palette/command-palette';
 
 const viewMap: ViewType[] = ['dashboard', 'clients', 'tasks', 'approvals', 'build-status', 'settings'];
+
+function ViewLoading() {
+  return <div className="h-full bg-background" />;
+}
+
+const DashboardView = dynamic(() => import('@/components/dashboard/dashboard-view').then((mod) => mod.DashboardView), {
+  ssr: false,
+  loading: ViewLoading,
+});
+const ClientsView = dynamic(() => import('@/components/clients/clients-view').then((mod) => mod.ClientsView), {
+  ssr: false,
+  loading: ViewLoading,
+});
+const TasksView = dynamic(() => import('@/components/tasks/tasks-view').then((mod) => mod.TasksView), {
+  ssr: false,
+  loading: ViewLoading,
+});
+const ApprovalsView = dynamic(() => import('@/components/approvals/approvals-view').then((mod) => mod.ApprovalsView), {
+  ssr: false,
+  loading: ViewLoading,
+});
+const BuildStatusView = dynamic(() => import('@/components/build-status/build-status-view').then((mod) => mod.BuildStatusView), {
+  ssr: false,
+  loading: ViewLoading,
+});
+const SettingsView = dynamic(() => import('@/components/settings/settings-view').then((mod) => mod.SettingsView), {
+  ssr: false,
+  loading: ViewLoading,
+});
 
 function AppContent() {
   const { currentView, setCurrentView } = useAppStore();
@@ -94,14 +118,14 @@ function AppContent() {
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-hidden">
+        <main className="flex-1 overflow-y-auto">
           <AnimatePresence mode="wait">
             {viewComponent}
           </AnimatePresence>
         </main>
         <footer className="select-none relative mt-auto flex h-10 shrink-0 flex-col items-center justify-between border-t border-transparent px-4 text-xs text-muted-foreground/70 pb-[env(safe-area-inset-bottom)] sm:flex-row sm:px-6">
           <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
-          <span>© 2025 SEO Delivery Agent <span className="mx-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" /> Built with ❤️</span>
+          <span>© 2025 RankForge <span className="mx-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" /> Built with ❤️</span>
           <div className="flex items-center gap-3">
             <span className="hidden sm:inline-flex items-center gap-1 text-muted-foreground/60">
               <kbd className="rounded border border-border/60 bg-muted/60 px-1 py-0.5 text-[10px] font-mono">⌘K</kbd>

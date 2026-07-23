@@ -25,6 +25,10 @@ jest.mock('@rankforge/database', () => {
       siteRestorePoint: {
         create: jest.fn(),
         findFirst: jest.fn(),
+        update: jest.fn(),
+      },
+      pageMatrixEntry: {
+        upsert: jest.fn(),
       },
       $transaction: jest.fn((promises) => Promise.all(promises)),
     },
@@ -126,6 +130,68 @@ describe('SiteAuditService (REQ-M2-02)', () => {
           description: 'Before write batch',
         },
       });
+    });
+  });
+
+  describe('rollbackLatestRestorePoint', () => {
+    it('should restore page matrix entries from latest restore point and mark it restored', async () => {
+      (prisma.siteRestorePoint.findFirst as jest.Mock).mockResolvedValue({
+        id: 'rp1',
+        clientId: 'client1',
+        snapshotData: JSON.stringify({
+          pageMatrixEntries: [
+            {
+              slug: 'emergency-plumber',
+              pageType: 'LOCATION_PAGE',
+              primaryKeyword: 'emergency plumber',
+              targetArea: 'Dubai',
+              priority: 1,
+              status: 'READY',
+              content: '<h1>Emergency plumber</h1>',
+              schemaJson: '{"@context":"https://schema.org"}',
+            },
+          ],
+        }),
+      });
+      (prisma.pageMatrixEntry.upsert as jest.Mock).mockResolvedValue({
+        id: 'page1',
+      });
+      (prisma.siteRestorePoint.update as jest.Mock).mockResolvedValue({
+        id: 'rp1',
+        restoredAt: new Date(),
+      });
+
+      const result = await service.rollbackLatestRestorePoint('client1');
+
+      expect(result).toEqual({ restorePointId: 'rp1', restoredPageCount: 1 });
+      expect(prisma.pageMatrixEntry.upsert).toHaveBeenCalledWith({
+        where: {
+          clientId_primaryKeyword: {
+            clientId: 'client1',
+            primaryKeyword: 'emergency plumber',
+          },
+        },
+        update: expect.objectContaining({
+          slug: 'emergency-plumber',
+          status: 'READY',
+        }),
+        create: expect.objectContaining({
+          clientId: 'client1',
+          primaryKeyword: 'emergency plumber',
+        }),
+      });
+      expect(prisma.siteRestorePoint.update).toHaveBeenCalledWith({
+        where: { id: 'rp1' },
+        data: { restoredAt: expect.any(Date) },
+      });
+    });
+
+    it('should block rollback when no unrestored restore point exists', async () => {
+      (prisma.siteRestorePoint.findFirst as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.rollbackLatestRestorePoint('client1'),
+      ).rejects.toThrow(PreconditionFailedException);
     });
   });
 });

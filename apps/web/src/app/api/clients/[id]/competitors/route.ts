@@ -1,25 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withClientTenant } from "@/lib/db";
-import { requireRole } from "@/lib/auth-guard";
+import { requireClientRole } from "@/lib/auth-guard";
 import { DataForSeoClient } from "@/lib/integrations/dataforseo";
+import { z } from "zod";
+
+const competitorTeardownSchema = z.object({
+  keywords: z.array(z.string().trim().min(1)).min(5),
+  locationNames: z.array(z.string().trim().min(1)).min(3),
+});
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireRole('OWNER', 'COORDINATOR');
-  if (!auth.ok) return auth.response;
-
   try {
     const { id: clientId } = await params;
-    const { keyword, location_name } = await request.json();
+    const auth = await requireClientRole(clientId, "OWNER", "COORDINATOR");
+    if (!auth.ok) return auth.response;
 
-    if (!keyword || !location_name) {
-      return NextResponse.json({ error: "keyword and location_name are required" }, { status: 400 });
+    const body = await request.json();
+    const parsed = competitorTeardownSchema.safeParse({
+      keywords: body.keywords,
+      locationNames: body.locationNames ?? body.location_names,
+    });
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          error:
+            "At least 5 keywords and 3 geo-points are required for competitor teardown",
+        },
+        { status: 400 },
+      );
     }
+    const { keywords, locationNames } = parsed.data;
 
     const client = await withClientTenant(clientId, (tenantDb) =>
-      tenantDb.client.findUnique({ where: { id: clientId } })
+      tenantDb.client.findUnique({ where: { id: clientId } }),
     );
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -27,16 +44,25 @@ export async function POST(
 
     const dataForSeo = new DataForSeoClient(client.organizationId);
     await dataForSeo.init();
-    
+
     if (!dataForSeo.isConnected) {
-       return NextResponse.json({ error: "DataForSEO is not connected for this organization" }, { status: 400 });
+      return NextResponse.json(
+        { error: "DataForSEO is required for live competitor teardown" },
+        { status: 424 },
+      );
     }
 
     // Trigger live SERP scraper
-    const liveBenchmarks = await dataForSeo.getCompetitorBenchmarks(keyword, location_name);
-    
+    const liveBenchmarks = await dataForSeo.getCompetitorBenchmarks(
+      keywords,
+      locationNames,
+    );
+
     if (!liveBenchmarks || liveBenchmarks.length === 0) {
-       return NextResponse.json({ message: "No competitors found" }, { status: 200 });
+      return NextResponse.json(
+        { message: "No competitors found" },
+        { status: 200 },
+      );
     }
 
     // Save to database
@@ -52,16 +78,23 @@ export async function POST(
               categories: b.categories,
               avgRating: b.avgRating,
               reviewCount: b.reviewCount,
+              photoCount: b.photoCount,
               sourceLineage: JSON.stringify(b.sourceLineage),
-            }
-          })
-        )
-      )
+            },
+          }),
+        ),
+      ),
     );
 
-    return NextResponse.json({ imported: liveBenchmarks.length }, { status: 201 });
+    return NextResponse.json(
+      { imported: liveBenchmarks.length },
+      { status: 201 },
+    );
   } catch (error) {
     console.error("Competitor live fetch error:", error);
-    return NextResponse.json({ error: "Failed to fetch competitor benchmarks" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch competitor benchmarks" },
+      { status: 500 },
+    );
   }
 }

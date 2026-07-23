@@ -163,6 +163,72 @@ export interface GeoGridScanResult {
   createdAt: string;
 }
 
+export interface BacklinkOpportunity {
+  id: string;
+  clientId: string;
+  url: string;
+  domainRating?: number | null;
+  competitorUrl: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SecondaryReviewMetric {
+  clientId: string;
+  facebookCount: number;
+  facebookRating: number;
+  trustpilotCount: number;
+  trustpilotRating: number;
+  lastSyncedAt: string | null;
+}
+
+export interface CitationRecord {
+  id: string;
+  clientId: string;
+  platform: string;
+  url: string | null;
+  napStatus: string;
+  tier: number;
+  status: string;
+  credentialsRef: string | null;
+  submittedAt: string | null;
+  lastVerifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContentPieceStatusHistory {
+  id: string;
+  contentPieceId: string;
+  oldStatus: string | null;
+  newStatus: string;
+  reason: string;
+  metadata: string | null;
+  createdAt: string;
+}
+
+export interface ContentPiece {
+  id: string;
+  clientId: string;
+  sourceKeywordId: string | null;
+  topic: string;
+  primaryKeyword: string;
+  title: string;
+  brief: string;
+  draftBody: string | null;
+  contentType: string;
+  status: string;
+  plagiarismProvider: string | null;
+  similarityScore: number | null;
+  similarityEvidence: string | null;
+  publishedUrl: string | null;
+  publishedAt: string | null;
+  statusHistory?: ContentPieceStatusHistory[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ClientDetail extends Omit<ClientListItem, 'taskCounts'> {
   keywords: KeywordMapEntry[];
   competitors: CompetitorBenchmark[];
@@ -171,9 +237,13 @@ export interface ClientDetail extends Omit<ClientListItem, 'taskCounts'> {
   tasks: TaskItem[];
   leads: LeadLogEntry[];
   geoGridScans?: GeoGridScanResult[];
+  backlinkOpportunities?: BacklinkOpportunity[];
+  secondaryReview?: SecondaryReviewMetric | null;
+  citations?: CitationRecord[];
+  contentPieces?: ContentPiece[];
   citationMetrics?: {
     totalCitations: number;
-    averageScore: number;
+    averageScore: number | null;
   };
   landingPageSchemaStatus?: string;
 }

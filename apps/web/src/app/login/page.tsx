@@ -110,7 +110,7 @@ export default function LoginPage() {
           <div className="space-y-1">
             <h1 className="text-xl font-bold tracking-tight">
               <span className="bg-gradient-to-r from-emerald-600 to-emerald-500 bg-clip-text text-transparent">
-                SEO Delivery
+                RankForge
               </span>
             </h1>
             <p className="text-sm text-muted-foreground">
@@ -167,6 +167,7 @@ export default function LoginPage() {
                     />
                     <button
                       type="button"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                       tabIndex={-1}

@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { encryptSecret } from "@/lib/crypto";
 import { requireSession } from "@/lib/auth-guard";
 import { verifyOAuthState } from "@/lib/oauth-state";
-import { GBP_OAUTH_SERVICE, LEGACY_GBP_SERVICE } from "@rankforge/database";
+import { GBP_OAUTH_SERVICE } from "@rankforge/database";
 
 export async function GET(request: NextRequest) {
   const auth = await requireSession();
@@ -29,7 +29,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const state = verifyOAuthState(stateBase64);
+    let state;
+    try {
+      state = verifyOAuthState(stateBase64);
+    } catch {
+      return NextResponse.json({ error: "Invalid OAuth state" }, { status: 400 });
+    }
     if (state.userId !== auth.user.id) {
       return NextResponse.json({ error: "State mismatch" }, { status: 400 });
     }
@@ -53,7 +58,7 @@ export async function GET(request: NextRequest) {
     await db.clientCredential.updateMany({
       where: {
         clientId,
-        service: { in: [GBP_OAUTH_SERVICE, LEGACY_GBP_SERVICE] },
+        service: GBP_OAUTH_SERVICE,
       },
       data: { isValid: false },
     });

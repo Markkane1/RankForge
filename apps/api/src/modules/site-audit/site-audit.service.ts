@@ -280,4 +280,90 @@ export class SiteAuditService {
       data: { isResolved: true },
     });
   }
+
+  async rollbackLatestRestorePoint(clientId: string) {
+    const restorePoint = await prisma.siteRestorePoint.findFirst({
+      where: { clientId, restoredAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!restorePoint) {
+      throw new PreconditionFailedException(
+        'Rollback blocked: no unrestored site restore point is available',
+      );
+    }
+
+    let snapshot: {
+      pageMatrixEntries?: Array<{
+        id?: string;
+        slug: string;
+        pageType: string;
+        primaryKeyword: string;
+        targetArea?: string | null;
+        priority?: number;
+        status?: string;
+        content?: string | null;
+        schemaJson?: string | null;
+      }>;
+    };
+
+    try {
+      snapshot = JSON.parse(restorePoint.snapshotData);
+    } catch (error: any) {
+      throw new BadRequestException(
+        `Restore point snapshot is invalid JSON: ${error.message}`,
+      );
+    }
+
+    const pageMatrixEntries = snapshot.pageMatrixEntries ?? [];
+    if (!pageMatrixEntries.length) {
+      throw new BadRequestException(
+        'Restore point snapshot has no pageMatrixEntries to restore',
+      );
+    }
+
+    const writes = pageMatrixEntries.map((entry) =>
+      prisma.pageMatrixEntry.upsert({
+        where: {
+          clientId_primaryKeyword: {
+            clientId,
+            primaryKeyword: entry.primaryKeyword,
+          },
+        },
+        update: {
+          slug: entry.slug,
+          pageType: entry.pageType,
+          targetArea: entry.targetArea ?? null,
+          priority: entry.priority ?? 5,
+          status: entry.status ?? 'DRAFT',
+          content: entry.content ?? null,
+          schemaJson: entry.schemaJson ?? null,
+        },
+        create: {
+          clientId,
+          slug: entry.slug,
+          pageType: entry.pageType,
+          primaryKeyword: entry.primaryKeyword,
+          targetArea: entry.targetArea ?? null,
+          priority: entry.priority ?? 5,
+          status: entry.status ?? 'DRAFT',
+          content: entry.content ?? null,
+          schemaJson: entry.schemaJson ?? null,
+        },
+      }),
+    );
+
+    await prisma.$transaction([
+      ...writes,
+      prisma.siteRestorePoint.update({
+        where: { id: restorePoint.id },
+        data: { restoredAt: new Date() },
+      }),
+    ]);
+
+    return {
+      restorePointId: restorePoint.id,
+      restoredPageCount: pageMatrixEntries.length,
+    };
+  }
 }

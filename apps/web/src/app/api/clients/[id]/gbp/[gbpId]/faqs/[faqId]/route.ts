@@ -4,7 +4,7 @@ import { requireClientRole } from "@/lib/auth-guard";
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string; gbpId: string; faqId: string } }
+  { params }: { params: { id: string; gbpId: string; faqId: string } },
 ) {
   try {
     const auth = await requireClientRole(params.id, "OWNER", "COORDINATOR");
@@ -12,7 +12,11 @@ export async function DELETE(
 
     const faq = await withClientTenant(params.id, async (tenantDb) => {
       const faq = await tenantDb.gbpFaq.findFirst({
-        where: { id: params.faqId, gbpProfileId: params.gbpId, gbpProfile: { clientId: params.id } },
+        where: {
+          id: params.faqId,
+          gbpProfileId: params.gbpId,
+          gbpProfile: { clientId: params.id },
+        },
       });
 
       if (!faq) {
@@ -32,6 +36,9 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("DELETE GBP FAQ error:", error);
-    return NextResponse.json({ error: "Failed to delete FAQ" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to delete FAQ" },
+      { status: 500 },
+    );
   }
 }

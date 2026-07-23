@@ -50,6 +50,52 @@ export class ContentPipelineController {
     return this.contentPipelineService.listScheduledPosts(clientId, start, end);
   }
 
+  @ApiOperation({
+    summary: 'Populate content calendar from informational keyword rows',
+  })
+  @ApiResponse({ status: 201, description: 'Content briefs planned' })
+  @Post('calendar/populate')
+  async populateCalendarFromInformationalKeywords(
+    @Param('id') clientId: string,
+  ) {
+    return this.contentPipelineService.populateCalendarFromInformationalKeywords(
+      clientId,
+    );
+  }
+
+  @ApiOperation({ summary: 'List Module 4 content pieces' })
+  @ApiResponse({ status: 200, description: 'Content pieces returned' })
+  @Get('content-pieces')
+  async listContentPieces(@Param('id') clientId: string) {
+    return this.contentPipelineService.listContentPieces(clientId);
+  }
+
+  @ApiOperation({
+    summary: 'Publish a content piece after similarity validation',
+  })
+  @ApiResponse({ status: 200, description: 'Content piece publish result' })
+  @Post('content-pieces/:contentPieceId/publish')
+  async publishContentPiece(
+    @Param('id') clientId: string,
+    @Param('contentPieceId') contentPieceId: string,
+  ) {
+    return this.contentPipelineService.publishContentPiece(
+      clientId,
+      contentPieceId,
+    );
+  }
+
+  @ApiOperation({ summary: 'Read back a published content piece' })
+  @ApiResponse({ status: 200, description: 'Published content piece returned' })
+  @Get('content-pieces/:contentPieceId/published')
+  async readPublishedContentPiece(
+    @Param('contentPieceId') contentPieceId: string,
+  ) {
+    return this.contentPipelineService.readPublishedContentPiece(
+      contentPieceId,
+    );
+  }
+
   @ApiOperation({ summary: 'Update/reschedule a scheduled post' })
   @ApiResponse({
     status: 200,
@@ -97,11 +143,13 @@ export class ContentPipelineController {
     @Param('id') clientId: string,
     @Body('topic') topic: string,
     @Body('primaryKeywords') primaryKeywords: string[],
+    @Body('requestedById') requestedById?: string,
   ) {
     return this.contentPipelineService.generateContentDraft(
       clientId,
       topic,
       primaryKeywords,
+      requestedById,
     );
   }
 

@@ -1,30 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withClientTenant } from "@/lib/db";
-import { requireRole } from "@/lib/auth-guard";
+import { requireClientRole } from "@/lib/auth-guard";
 import { readFile, unlink } from "fs/promises";
 import path from "path";
 
 function storedPhotoPath(gbpId: string, url: string) {
   const parsed = new URL(url, "http://rankforge.local");
-  const storedName = parsed.searchParams.get("name") ?? parsed.pathname.split("/").pop();
+  const storedName =
+    parsed.searchParams.get("name") ?? parsed.pathname.split("/").pop();
   if (!storedName) return null;
   return path.join(process.cwd(), ".storage", "gbp-photos", gbpId, storedName);
 }
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string; gbpId: string; photoId: string }> }
+  {
+    params,
+  }: { params: Promise<{ id: string; gbpId: string; photoId: string }> },
 ) {
-  const auth = await requireRole('OWNER', 'COORDINATOR', 'VIEWER');
-  if (!auth.ok) return auth.response;
-
   try {
     const { id: clientId, gbpId, photoId } = await params;
+    const auth = await requireClientRole(
+      clientId,
+      "OWNER",
+      "COORDINATOR",
+      "VIEWER",
+      "APPROVER",
+    );
+    if (!auth.ok) return auth.response;
 
     const photo = await withClientTenant(clientId, (tenantDb) =>
       tenantDb.gbpPhoto.findFirst({
         where: { id: photoId, gbpProfileId: gbpId, gbpProfile: { clientId } },
-      })
+      }),
     );
 
     if (!photo) {
@@ -33,7 +41,10 @@ export async function GET(
 
     const filePath = storedPhotoPath(gbpId, photo.url);
     if (!filePath) {
-      return NextResponse.json({ error: "Photo file not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Photo file not found" },
+        { status: 404 },
+      );
     }
 
     const bytes = await readFile(filePath);
@@ -47,25 +58,26 @@ export async function GET(
     console.error("GBP photo GET error:", error);
     return NextResponse.json(
       { error: "Failed to read GBP photo" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string; gbpId: string; photoId: string }> }
+  {
+    params,
+  }: { params: Promise<{ id: string; gbpId: string; photoId: string }> },
 ) {
-  const auth = await requireRole('OWNER', 'COORDINATOR');
-  if (!auth.ok) return auth.response;
-
   try {
     const { id: clientId, gbpId, photoId } = await params;
+    const auth = await requireClientRole(clientId, "OWNER", "COORDINATOR");
+    if (!auth.ok) return auth.response;
 
     const photo = await withClientTenant(clientId, (tenantDb) =>
       tenantDb.gbpPhoto.findFirst({
         where: { id: photoId, gbpProfileId: gbpId, gbpProfile: { clientId } },
-      })
+      }),
     );
 
     if (!photo) {
@@ -76,7 +88,7 @@ export async function DELETE(
     await withClientTenant(clientId, (tenantDb) =>
       tenantDb.gbpPhoto.delete({
         where: { id: photoId },
-      })
+      }),
     );
     if (filePath) {
       await unlink(filePath).catch(() => undefined);
@@ -87,7 +99,7 @@ export async function DELETE(
     console.error("GBP photo DELETE error:", error);
     return NextResponse.json(
       { error: "Failed to delete GBP photo" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

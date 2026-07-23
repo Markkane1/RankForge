@@ -4,7 +4,7 @@ import { withClientTenant } from "@/lib/db";
 import { encryptSecret } from "@/lib/crypto";
 import { requireClientRole } from "@/lib/auth-guard";
 import { verifyOAuthState } from "@/lib/oauth-state";
-import { GBP_OAUTH_SERVICE, LEGACY_GBP_SERVICE } from "@rankforge/database";
+import { GBP_OAUTH_SERVICE } from "@rankforge/database";
 
 export async function GET(
   request: Request,
@@ -26,7 +26,12 @@ export async function GET(
       return new NextResponse("No state provided", { status: 400 });
     }
 
-    const verifiedState = verifyOAuthState(state);
+    let verifiedState;
+    try {
+      verifiedState = verifyOAuthState(state);
+    } catch {
+      return new NextResponse("Invalid state", { status: 400 });
+    }
     if (
       clientId !== verifiedState.clientId ||
       auth.user.id !== verifiedState.userId
@@ -56,7 +61,7 @@ export async function GET(
       await tenantDb.clientCredential.updateMany({
         where: {
           clientId,
-          service: { in: [GBP_OAUTH_SERVICE, LEGACY_GBP_SERVICE] },
+          service: GBP_OAUTH_SERVICE,
         },
         data: { isValid: false },
       });
@@ -67,7 +72,9 @@ export async function GET(
           service: GBP_OAUTH_SERVICE,
           encryptedToken: encryptedAccessToken,
           refreshToken: encryptedRefreshToken,
-          tokenExpiryAt: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
+          tokenExpiryAt: tokens.expiry_date
+            ? new Date(tokens.expiry_date)
+            : null,
           scope: tokens.scope,
           isValid: true,
         },

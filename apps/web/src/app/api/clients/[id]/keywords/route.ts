@@ -1,31 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withClientTenant } from "@/lib/db";
-import { requireRole } from "@/lib/auth-guard";
+import { requireClientRole } from "@/lib/auth-guard";
 import { createKeywordSchema, updateKeywordSchema } from "@/lib/validations";
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireRole('OWNER', 'COORDINATOR');
-  if (!auth.ok) return auth.response;
-
   try {
     const { id: clientId } = await params;
+    const auth = await requireClientRole(clientId, "OWNER", "COORDINATOR");
+    if (!auth.ok) return auth.response;
+
     const body = await request.json();
 
     const parsed = createKeywordSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
         { error: "Invalid input", details: parsed.error.format() },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     const { keyword, targetRank, priority } = parsed.data;
 
     const client = await withClientTenant(clientId, (tenantDb) =>
-      tenantDb.client.findUnique({ where: { id: clientId } })
+      tenantDb.client.findUnique({ where: { id: clientId } }),
     );
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -74,26 +74,29 @@ export async function POST(
     return NextResponse.json(newKeyword, { status: 201 });
   } catch (error) {
     console.error("Keyword creation API error:", error);
-    return NextResponse.json({ error: "Failed to create keyword" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to create keyword" },
+      { status: 500 },
+    );
   }
 }
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireRole('OWNER', 'COORDINATOR');
-  if (!auth.ok) return auth.response;
-
   try {
     const { id: clientId } = await params;
+    const auth = await requireClientRole(clientId, "OWNER", "COORDINATOR");
+    if (!auth.ok) return auth.response;
+
     const body = await request.json();
 
     const parsed = updateKeywordSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
         { error: "Invalid input", details: parsed.error.format() },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -102,7 +105,7 @@ export async function PATCH(
     const existing = await withClientTenant(clientId, (tenantDb) =>
       tenantDb.keywordMapEntry.findUnique({
         where: { id: keywordId },
-      })
+      }),
     );
 
     if (!existing || existing.clientId !== clientId) {
@@ -138,6 +141,9 @@ export async function PATCH(
     return NextResponse.json(updated);
   } catch (error) {
     console.error("Keyword update API error:", error);
-    return NextResponse.json({ error: "Failed to update keyword" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to update keyword" },
+      { status: 500 },
+    );
   }
 }

@@ -103,7 +103,6 @@ export const prisma: any = globalForPrisma.prisma ?? prismaClientSingleton();
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
 export const GBP_OAUTH_SERVICE = "GBP_OAUTH";
-export const LEGACY_GBP_SERVICE = "GBP";
 
 export async function transitionClientTo(
   clientId: string,

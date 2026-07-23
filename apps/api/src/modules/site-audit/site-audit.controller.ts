@@ -49,4 +49,11 @@ export class SiteAuditController {
   ) {
     return this.siteAuditService.executeFix(clientId, issueId);
   }
+
+  @ApiOperation({ summary: 'Rollback the latest restore point' })
+  @ApiResponse({ status: 200, description: 'Restore point rolled back' })
+  @Post('restore-point/rollback')
+  async rollbackLatestRestorePoint(@Param('id') clientId: string) {
+    return this.siteAuditService.rollbackLatestRestorePoint(clientId);
+  }
 }

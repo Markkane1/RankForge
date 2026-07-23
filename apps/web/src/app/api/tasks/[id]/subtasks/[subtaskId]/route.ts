@@ -14,10 +14,25 @@ export async function PATCH(
 
     const subtask = await db.subtask.findUnique({
       where: { id: subtaskId, taskId: id },
+      include: { task: { include: { subtasks: true } } },
     });
 
     if (!subtask) {
       return NextResponse.json({ error: "Subtask not found" }, { status: 404 });
+    }
+
+    const task = subtask.task;
+    if (!subtask.isCompleted && task.taskId === 'REQ-M5-05') {
+      const previousOpenStep = task.subtasks
+        .filter((step) => step.sortOrder < subtask.sortOrder)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .find((step) => !step.isCompleted);
+      if (previousOpenStep) {
+        return NextResponse.json(
+          { error: "Complete the diagnosis checklist in order before proposing own tactics." },
+          { status: 400 }
+        );
+      }
     }
 
     const updated = await db.subtask.update({

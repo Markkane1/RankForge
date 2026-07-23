@@ -18,11 +18,7 @@ export class LocalfalconService {
       'LOCAL_FALCON',
     );
 
-    // In a real scenario, we would post to Local Falcon to start a scan
-    // For now, this is the structural proxy
-
     try {
-      // Mocking the fetch call structure for Local Falcon API
       const response = await fetch(`${this.apiUrl}/scans`, {
         method: 'POST',
         headers: {
@@ -33,16 +29,17 @@ export class LocalfalconService {
       });
 
       if (!response.ok) {
-        // If it fails (e.g. because of dummy API key during dev), we handle it gracefully
-        throw new Error('Local Falcon API Error');
+        const details = await response.text().catch(() => '');
+        throw new Error(
+          `Local Falcon API returned ${response.status}${details ? `: ${details}` : ''}`,
+        );
       }
 
       return await response.json();
     } catch (e) {
-      // Return a simulated structured error or fallback data for the UI if API keys aren't set up yet
       throw new HttpException(
-        'LocalFalcon API Integration not fully configured',
-        HttpStatus.NOT_IMPLEMENTED,
+        (e as Error).message || 'Local Falcon API integration failed',
+        HttpStatus.BAD_GATEWAY,
       );
     }
   }

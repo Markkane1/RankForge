@@ -50,6 +50,7 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useState } from 'react';
+import type React from 'react';
 import { motion } from 'framer-motion';
 import type { BuildStatusData, ReqStatus, BuildRequirement } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -519,7 +520,7 @@ export function BuildStatusView() {
               {detailReq.note && (
                 <div className="rounded-lg border border-border/60 p-3">
                   <p className="text-xs font-medium text-muted-foreground mb-1">Note</p>
-                  <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">{detailReq.note}</p>
+                  <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">{renderLinkedNote(detailReq.note)}</p>
                 </div>
               )}
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
@@ -614,6 +615,31 @@ export function BuildStatusView() {
 }
 
 // ─── Requirement Row ───
+
+function renderLinkedNote(note: string) {
+  const parts: React.ReactNode[] = [];
+  const linkRe = /\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]+)\)/g;
+  let last = 0;
+
+  for (const match of note.matchAll(linkRe)) {
+    if (match.index > last) parts.push(note.slice(last, match.index));
+    parts.push(
+      <a
+        key={`${match.index}-${match[2]}`}
+        href={match[2]}
+        target={match[2].startsWith('http') ? '_blank' : undefined}
+        rel={match[2].startsWith('http') ? 'noreferrer' : undefined}
+        className="font-medium text-emerald-700 underline underline-offset-2 dark:text-emerald-300"
+      >
+        {match[1]}
+      </a>,
+    );
+    last = match.index + match[0].length;
+  }
+
+  if (last < note.length) parts.push(note.slice(last));
+  return parts.length ? parts : note;
+}
 
 function RequirementRow({ req, onEdit, onView }: { req: BuildRequirement; onEdit: (req: BuildRequirement) => void; onView: (req: BuildRequirement) => void }) {
   const modColor = getModuleColor(req.module);

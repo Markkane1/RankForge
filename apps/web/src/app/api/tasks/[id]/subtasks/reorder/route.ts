@@ -26,6 +26,12 @@ export async function PATCH(
     if (!task) {
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
+    if (task.taskId === 'REQ-M5-05') {
+      return NextResponse.json(
+        { error: "Cannot reorder self-correction diagnosis checklist." },
+        { status: 400 }
+      );
+    }
 
     // Update sortOrder for each subtask based on array position
     const updates = subtaskIds.map((subtaskId, index) =>

@@ -16,16 +16,16 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Local SEO Delivery Agent — Dashboard",
-  description: "Internal agency platform for managing local SEO delivery across multiple clients. Modules for GBP optimization, task scheduling, approvals, and analytics.",
+  title: "RankForge — Dashboard",
+  description: "Internal agency platform for managing RankForge operations across multiple clients. Modules for GBP optimization, task scheduling, approvals, and analytics.",
   keywords: ["Local SEO", "GBP", "Google Business Profile", "SEO Dashboard", "Agency Tool"],
-  authors: [{ name: "SEO Delivery Agency" }],
+  authors: [{ name: "RankForge" }],
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
   openGraph: {
-    title: "Local SEO Delivery Agent",
-    description: "Internal agency platform for managing local SEO delivery",
+    title: "RankForge",
+    description: "Internal agency platform for managing RankForge operations",
     type: "website",
   },
 };

@@ -6,6 +6,7 @@ import * as kms from '../../src/lib/kms';
 vi.mock('../../src/lib/kms', () => ({
   encryptWithKms: vi.fn(),
   decryptWithKms: vi.fn(),
+  getKmsKeyName: vi.fn(() => 'projects/project-1/locations/global/keyRings/ring-1/cryptoKeys/key-1'),
 }));
 
 // Mock env to bypass Zod validation during tests
@@ -73,5 +74,24 @@ describe('KMS Fallback Logic (REQ-02)', () => {
     expect(decrypted).toBe(plaintext);
     
     expect(kms.encryptWithKms).toHaveBeenCalled(); // It tried...
+  });
+
+  it('should not fallback to local AES in production when KMS fails', async () => {
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = '/path/to/creds.json';
+    process.env.NODE_ENV = 'production';
+    vi.mocked(kms.encryptWithKms).mockRejectedValue(new Error('KMS Down'));
+
+    await expect(encryptSecret('fallback-secret')).rejects.toThrow('Failed to encrypt with KMS');
+  });
+
+  it('should require an explicit KMS key name or all KMS key components', async () => {
+    const actualKms = await vi.importActual<typeof import('../../src/lib/kms')>('../../src/lib/kms');
+    delete process.env.GCP_KMS_KEY_NAME;
+    delete process.env.GOOGLE_CLOUD_PROJECT;
+    delete process.env.GCP_KMS_LOCATION;
+    delete process.env.GCP_KMS_KEYRING;
+    delete process.env.GCP_KMS_CRYPTOKEY;
+
+    expect(() => actualKms.getKmsKeyName()).toThrow('GCP_KMS_KEY_NAME');
   });
 });

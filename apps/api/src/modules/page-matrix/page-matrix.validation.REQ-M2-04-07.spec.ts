@@ -38,6 +38,8 @@ describe('PageMatrix Validations & Checklist (REQ-M2-04 to REQ-M2-07)', () => {
 
     service = module.get<PageMatrixService>(PageMatrixService);
     jest.clearAllMocks();
+    delete process.env.PAGESPEED_API_KEY;
+    delete (global as any).fetch;
   });
 
   describe('validateTemplateBlocks', () => {
@@ -103,10 +105,39 @@ describe('PageMatrix Validations & Checklist (REQ-M2-04 to REQ-M2-07)', () => {
         '@type': 'LocalBusiness',
         name: 'Plumber Pro',
         telephone: '12345',
-        address: { streetAddress: '123 Main' },
-        geo: { latitude: 10.5, longitude: 20.3 },
+        url: 'https://example.com',
+        address: {
+          '@type': 'PostalAddress',
+          streetAddress: '123 Main',
+          addressLocality: 'Dubai',
+          addressRegion: 'Dubai',
+          postalCode: '00000',
+        },
+        geo: { '@type': 'GeoCoordinates', latitude: 10.5, longitude: 20.3 },
       });
       expect(() => service.validateSchemaJson(schema)).not.toThrow();
+      expect(() => service.evaluateRichResultsSchema(schema)).not.toThrow();
+    });
+
+    it('should reject unsupported rich result schema types', () => {
+      const schema = JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'Article',
+        name: 'Plumber Pro',
+        telephone: '12345',
+        url: 'https://example.com',
+        address: {
+          '@type': 'PostalAddress',
+          streetAddress: '123 Main',
+          addressLocality: 'Dubai',
+          addressRegion: 'Dubai',
+          postalCode: '00000',
+        },
+        geo: { '@type': 'GeoCoordinates', latitude: 10.5, longitude: 20.3 },
+      });
+      expect(() => service.evaluateRichResultsSchema(schema)).toThrow(
+        'Rich Results schema must use a Google-supported LocalBusiness subtype.',
+      );
     });
   });
 
@@ -132,8 +163,15 @@ describe('PageMatrix Validations & Checklist (REQ-M2-04 to REQ-M2-07)', () => {
           '@type': 'LocalBusiness',
           name: 'Plumber Pro',
           telephone: '1234567890',
-          address: { streetAddress: '123 Main St' },
-          geo: { latitude: 1, longitude: 2 },
+          url: 'https://example.com/test-slug',
+          address: {
+            '@type': 'PostalAddress',
+            streetAddress: '123 Main St',
+            addressLocality: 'New York',
+            addressRegion: 'NY',
+            postalCode: '10001',
+          },
+          geo: { '@type': 'GeoCoordinates', latitude: 1, longitude: 2 },
         }),
       });
 
@@ -145,11 +183,31 @@ describe('PageMatrix Validations & Checklist (REQ-M2-04 to REQ-M2-07)', () => {
     });
 
     it('should allow transition to PUBLISHED if all checklist checks pass', async () => {
+      process.env.PAGESPEED_API_KEY = 'test-pagespeed-key';
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          loadingExperience: {
+            metrics: {
+              LARGEST_CONTENTFUL_PAINT_MS: { category: 'FAST' },
+              INTERACTION_TO_NEXT_PAINT: { category: 'FAST' },
+              CUMULATIVE_LAYOUT_SHIFT_SCORE: { category: 'FAST' },
+            },
+          },
+          lighthouseResult: {
+            categories: {
+              performance: { score: 0.95 },
+            },
+          },
+        }),
+      }) as any;
+
       (prisma.client.findUnique as jest.Mock).mockResolvedValue({
         id: 'client1',
         businessName: 'Plumber Pro',
         phone: '1234567890',
         address: '123 Main St',
+        website: 'https://example.com',
       });
 
       (prisma.pageMatrixEntry.findUnique as jest.Mock).mockResolvedValue({
@@ -165,8 +223,15 @@ describe('PageMatrix Validations & Checklist (REQ-M2-04 to REQ-M2-07)', () => {
           '@type': 'LocalBusiness',
           name: 'Plumber Pro',
           telephone: '1234567890',
-          address: { streetAddress: '123 Main St' },
-          geo: { latitude: 1, longitude: 2 },
+          url: 'https://example.com/test-slug',
+          address: {
+            '@type': 'PostalAddress',
+            streetAddress: '123 Main St',
+            addressLocality: 'New York',
+            addressRegion: 'NY',
+            postalCode: '10001',
+          },
+          geo: { '@type': 'GeoCoordinates', latitude: 1, longitude: 2 },
         }),
       });
 
@@ -180,6 +245,50 @@ describe('PageMatrix Validations & Checklist (REQ-M2-04 to REQ-M2-07)', () => {
         status: 'PUBLISHED',
       });
       expect(result.status).toBe('PUBLISHED');
+      expect(String((global.fetch as jest.Mock).mock.calls[0][0])).toContain(
+        'pagespeedonline/v5/runPagespeed',
+      );
+    });
+
+    it('should block transition to PUBLISHED if PageSpeed is not configured', async () => {
+      (prisma.client.findUnique as jest.Mock).mockResolvedValue({
+        id: 'client1',
+        businessName: 'Plumber Pro',
+        phone: '1234567890',
+        address: '123 Main St',
+        website: 'https://example.com',
+      });
+
+      (prisma.pageMatrixEntry.findUnique as jest.Mock).mockResolvedValue({
+        id: 'entry1',
+        clientId: 'client1',
+        slug: 'test-slug',
+        pageType: 'LOCATION_PAGE',
+        primaryKeyword: 'plumber',
+        content:
+          '<title>Plumber</title><h1>Plumber</h1> Plumber Pro 1234567890 123 Main St viewport analytics intro services real jobs review excerpts logistics faqs',
+        schemaJson: JSON.stringify({
+          '@context': 'https://schema.org',
+          '@type': 'LocalBusiness',
+          name: 'Plumber Pro',
+          telephone: '1234567890',
+          url: 'https://example.com/test-slug',
+          address: {
+            '@type': 'PostalAddress',
+            streetAddress: '123 Main St',
+            addressLocality: 'New York',
+            addressRegion: 'NY',
+            postalCode: '10001',
+          },
+          geo: { '@type': 'GeoCoordinates', latitude: 1, longitude: 2 },
+        }),
+      });
+
+      (prisma.pageMatrixEntry.findMany as jest.Mock).mockResolvedValue([]);
+
+      await expect(
+        service.updateEntry('client1', 'entry1', { status: 'PUBLISHED' }),
+      ).rejects.toThrow('PAGESPEED_API_KEY is not configured');
     });
   });
 

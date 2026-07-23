@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { env } from './env';
+import { encryptWithKms, decryptWithKms } from './kms';
 
 // ─── AES-256-GCM encryption for TOTP secrets at rest ───
 
@@ -19,8 +20,6 @@ function deriveKey(): Buffer {
   return crypto.createHash('sha256').update(raw).digest();
 }
 
-import { encryptWithKms, decryptWithKms } from './kms';
-
 /**
  * Encrypt a plaintext string (e.g. TOTP secret) using AES-256-GCM,
  * or GCP KMS if configured.
@@ -33,6 +32,9 @@ export async function encryptSecret(plaintext: string, keyId?: string): Promise<
       return `kms:${kmsEncrypted}`;
     }
   } catch (error) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(`Failed to encrypt with KMS: ${error}`);
+    }
     console.warn("KMS encryption failed, falling back to local AES-256-GCM:", error);
   }
 

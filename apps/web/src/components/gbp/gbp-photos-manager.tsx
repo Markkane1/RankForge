@@ -3,22 +3,28 @@
 import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getGbpPhotos, uploadGbpPhoto, deleteGbpPhoto } from '@/lib/api';
-import { GbpPhoto } from '@/lib/types';
+import type { CompetitorBenchmark, GbpPhoto } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Progress } from '@/components/ui/progress';
 import { Upload, Trash2, Image as ImageIcon, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 export interface GbpPhotosManagerProps {
   clientId: string;
   gbpId: string;
+  competitorBenchmarks?: CompetitorBenchmark[];
 }
 
 const CATEGORIES = ["EXTERIOR", "INTERIOR", "PRODUCT", "TEAM", "AT_WORK"];
 
-export function GbpPhotosManager({ clientId, gbpId }: GbpPhotosManagerProps) {
+export function getCompetitorPhotoTarget(competitorBenchmarks: Pick<CompetitorBenchmark, 'photoCount'>[]) {
+  return Math.max(0, ...competitorBenchmarks.map((benchmark) => benchmark.photoCount ?? 0));
+}
+
+export function GbpPhotosManager({ clientId, gbpId, competitorBenchmarks = [] }: GbpPhotosManagerProps) {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedCategory, setSelectedCategory] = useState("EXTERIOR");
@@ -67,6 +73,8 @@ export function GbpPhotosManager({ clientId, gbpId }: GbpPhotosManagerProps) {
   };
 
   const isUploading = uploadMut.isPending;
+  const photoTarget = getCompetitorPhotoTarget(competitorBenchmarks);
+  const photoProgress = photoTarget > 0 ? Math.min(100, Math.round((photos.length / photoTarget) * 100)) : 0;
 
   return (
     <Card>
@@ -82,6 +90,18 @@ export function GbpPhotosManager({ clientId, gbpId }: GbpPhotosManagerProps) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {photoTarget > 0 && (
+          <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+            <div className="flex items-center justify-between gap-3 text-xs">
+              <span className="font-medium">Competitor photo target</span>
+              <span className="text-muted-foreground">{photos.length}/{photoTarget} photos</span>
+            </div>
+            <Progress value={photoProgress} className="h-2" />
+            <p className="text-[11px] text-muted-foreground">
+              Target uses the highest stored competitor `photoCount`.
+            </p>
+          </div>
+        )}
         
         {/* Upload Zone */}
         <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center p-4 border-2 border-dashed rounded-lg bg-muted/20">

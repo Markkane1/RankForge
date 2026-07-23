@@ -7,7 +7,10 @@
     "build": "next build && node -e \"const fs = require('fs'); fs.cpSync('.next/static', '.next/standalone/.next/static', { recursive: true }); fs.cpSync('public', '.next/standalone/public', { recursive: true });\"",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "check:lhci": "node scripts/check-lighthouse-config.js",
+    "check:bundle-size": "node scripts/check-bundle-size.js"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
@@ -94,6 +97,7 @@
     "zustand": "^5.0.6"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@next/bundle-analyzer": "^16.2.10",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4",

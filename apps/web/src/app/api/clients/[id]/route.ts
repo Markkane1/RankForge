@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, withClientTenant } from "@/lib/db";
-import { requireClientRole, requireRole } from "@/lib/auth-guard";
+import { requireClientRole } from "@/lib/auth-guard";
 import { requireApproval } from "@/lib/approval-guard";
 import {
   hasKeywordStuffedBusinessName,
@@ -14,7 +14,13 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const auth = await requireClientRole(id, "OWNER", "COORDINATOR", "VIEWER", "APPROVER");
+    const auth = await requireClientRole(
+      id,
+      "OWNER",
+      "COORDINATOR",
+      "VIEWER",
+      "APPROVER",
+    );
     if (!auth.ok) return auth.response;
 
     const client = await withClientTenant(id, (tenantDb) =>
@@ -44,6 +50,25 @@ export async function GET(
             orderBy: { createdAt: "desc" },
             take: 10,
           },
+          backlinkOpportunities: {
+            orderBy: { updatedAt: "desc" },
+            take: 10,
+          },
+          citations: {
+            orderBy: { updatedAt: "desc" },
+            take: 20,
+          },
+          contentPieces: {
+            orderBy: { updatedAt: "desc" },
+            take: 20,
+            include: {
+              statusHistory: {
+                orderBy: { createdAt: "desc" },
+                take: 3,
+              },
+            },
+          },
+          secondaryReview: true,
         },
       }),
     );
@@ -135,6 +160,7 @@ export async function GET(
     return NextResponse.json({
       ...clientWithoutGbp,
       gbpProfiles: gbpProfilesData,
+      secondaryReview: client.secondaryReview,
       citationMetrics: {
         totalCitations,
         averageScore: totalCitations > 0 ? citationAverageScore : null,
@@ -154,11 +180,11 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireRole("OWNER", "COORDINATOR");
-  if (!auth.ok) return auth.response;
-
   try {
     const { id } = await params;
+    const auth = await requireClientRole(id, "OWNER", "COORDINATOR");
+    if (!auth.ok) return auth.response;
+
     const body = await request.json();
 
     const parsed = updateClientSettingsSchema.safeParse(body);
@@ -202,11 +228,13 @@ export async function PATCH(
     }
 
     const sensitiveChanges = {
-      ...(businessName !== undefined && businessName !== client.businessName && { businessName }),
+      ...(businessName !== undefined &&
+        businessName !== client.businessName && { businessName }),
       ...(address !== undefined && address !== client.address && { address }),
       ...(city !== undefined && city !== client.city && { city }),
       ...(state !== undefined && state !== client.state && { state }),
-      ...(postalCode !== undefined && postalCode !== client.postalCode && { postalCode }),
+      ...(postalCode !== undefined &&
+        postalCode !== client.postalCode && { postalCode }),
     };
 
     if (Object.keys(sensitiveChanges).length > 0) {
@@ -222,7 +250,9 @@ export async function PATCH(
       );
 
       return NextResponse.json(
-        { message: "Sensitive mutation intercepted. Approval request created." },
+        {
+          message: "Sensitive mutation intercepted. Approval request created.",
+        },
         { status: 202 },
       );
     }

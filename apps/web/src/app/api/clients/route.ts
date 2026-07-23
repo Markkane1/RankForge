@@ -5,6 +5,21 @@ import { requireSession, requireRole } from "@/lib/auth-guard";
 import { requireApproval } from "@/lib/approval-guard";
 import { createClientSchema } from "@/lib/validations";
 
+function withGbpProfileStats(gbpProfiles: Array<any>) {
+  return gbpProfiles.map((profile) => {
+    const { reviews, ...profileRest } = profile;
+    const ratings = reviews.map((r: { rating: number }) => r.rating);
+    return {
+      ...profileRest,
+      reviewCount: ratings.length,
+      avgRating:
+        ratings.length > 0
+          ? Number((ratings.reduce((a: number, b: number) => a + b, 0) / ratings.length).toFixed(1))
+          : null,
+    };
+  });
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireSession();
   if (!auth.ok) return auth.response;
@@ -62,25 +77,9 @@ export async function GET(request: NextRequest) {
         taskCounts[task.status] = (taskCounts[task.status] || 0) + 1;
       }
 
-      // GBP review stats
-      let gbpProfileData: Record<string, unknown> | null = null;
-      const gbpProfile = gbpProfiles[0] ?? null;
-      if (gbpProfile) {
-        const { reviews, ...profileRest } = gbpProfile;
-        const ratings = reviews.map((r) => r.rating);
-        gbpProfileData = {
-          ...profileRest,
-          reviewCount: ratings.length,
-          avgRating:
-            ratings.length > 0
-              ? Number((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1))
-              : null,
-        };
-      }
-
       return {
         ...rest,
-        gbpProfile: gbpProfileData,
+        gbpProfiles: withGbpProfileStats(gbpProfiles),
         taskCounts,
       };
     });
@@ -204,7 +203,7 @@ export async function POST(request: NextRequest) {
             description: `Potential conflict with ${existing.name} in ${primaryCategory}.`,
             requestType: "CONFLICT_OF_INTEREST",
             requestData: {
-              incoming: { name, businessName, primaryCategory, city, serviceAreas },
+              incoming: parsed.data,
               existing: {
                 id: existing.id,
                 name: existing.name,
@@ -290,7 +289,7 @@ export async function POST(request: NextRequest) {
           : undefined,
       },
       include: {
-        gbpProfile: {
+        gbpProfiles: {
           include: {
             reviews: { select: { rating: true } },
           },
@@ -307,19 +306,8 @@ export async function POST(request: NextRequest) {
       taskCounts[task.status] = (taskCounts[task.status] || 0) + 1;
     }
 
-    let gbpProfileData: Record<string, unknown> | null = null;
-    const gbpProfile = gbpProfiles[0] ?? null;
-    if (gbpProfile) {
-      const { reviews, ...profileRest } = gbpProfile;
-      gbpProfileData = {
-        ...profileRest,
-        reviewCount: reviews.length,
-        avgRating: null,
-      };
-    }
-
     return NextResponse.json(
-      { ...rest, gbpProfile: gbpProfileData, taskCounts },
+      { ...rest, gbpProfiles: withGbpProfileStats(gbpProfiles), taskCounts },
       { status: 201 }
     );
   } catch (error) {

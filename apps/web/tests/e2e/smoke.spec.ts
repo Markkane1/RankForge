@@ -1,16 +1,22 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('RankForge Smoke Test', () => {
+  async function expectNoHorizontalOverflow(page: import('@playwright/test').Page) {
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    expect(overflow).toBe(false);
+  }
+
   test('should load login page and show validation errors on blank submit', async ({ page }) => {
     // 1. Go to login page
     await page.goto('http://localhost:3000/login');
-    await expect(page).toHaveTitle(/Local SEO Delivery Agent — Dashboard/i);
+    await expect(page).toHaveTitle(/RankForge — Dashboard/i);
 
     // 2. Click sign-in with blank fields
     await page.click('button[type="submit"]');
 
     // 3. Page should remain on login
     await expect(page.url()).toContain('/login');
+    await expectNoHorizontalOverflow(page);
   });
 
   test('should load portal verification page', async ({ page }) => {
@@ -21,6 +27,7 @@ test.describe('RankForge Smoke Test', () => {
     // Should display portal login/token entry form or redirect to login
     const url = page.url();
     expect(url).toMatch(/(\/login|\/portal)/);
+    await expectNoHorizontalOverflow(page);
   });
 
   test('should log in successfully as owner and load dashboard', async ({ page }) => {
@@ -39,5 +46,6 @@ test.describe('RankForge Smoke Test', () => {
     
     // 5. Check if dashboard view loads and displays "Overview of your agency performance"
     await expect(page.locator('body')).toContainText(/Overview of your agency performance/i);
+    await expectNoHorizontalOverflow(page);
   });
 });

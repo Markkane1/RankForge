@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withClientTenant } from "@/lib/db";
-import { requireRole } from "@/lib/auth-guard";
+import { requireClientRole } from "@/lib/auth-guard";
 import { updateGbpProductSchema } from "@/lib/validations";
 
 async function verifyLinkAlive(url: string): Promise<boolean> {
@@ -32,11 +32,11 @@ export async function PATCH(
     params,
   }: { params: Promise<{ id: string; gbpId: string; productId: string }> },
 ) {
-  const auth = await requireRole("OWNER", "COORDINATOR");
-  if (!auth.ok) return auth.response;
-
   try {
     const { id: clientId, gbpId, productId } = await params;
+    const auth = await requireClientRole(clientId, "OWNER", "COORDINATOR");
+    if (!auth.ok) return auth.response;
+
     const body = await request.json();
 
     const parsed = updateGbpProductSchema.safeParse(body);
@@ -76,7 +76,7 @@ export async function PATCH(
     const product = await withClientTenant(clientId, (tenantDb) =>
       tenantDb.gbpProduct.findFirst({
         where: { id: productId, gbpProfileId: gbpId, gbpProfile: { clientId } },
-      })
+      }),
     );
 
     if (!product) {
@@ -92,7 +92,7 @@ export async function PATCH(
             name: { equals: category, mode: "insensitive" },
           },
           select: { id: true },
-        })
+        }),
       );
 
       if (!service) {
@@ -117,7 +117,7 @@ export async function PATCH(
           ...(url !== undefined && { url }),
           ...(isUrlValid !== undefined && { isUrlValid }),
         },
-      })
+      }),
     );
 
     return NextResponse.json(updatedProduct);
@@ -136,16 +136,15 @@ export async function DELETE(
     params,
   }: { params: Promise<{ id: string; gbpId: string; productId: string }> },
 ) {
-  const auth = await requireRole("OWNER", "COORDINATOR");
-  if (!auth.ok) return auth.response;
-
   try {
     const { id: clientId, gbpId, productId } = await params;
+    const auth = await requireClientRole(clientId, "OWNER", "COORDINATOR");
+    if (!auth.ok) return auth.response;
 
     const product = await withClientTenant(clientId, (tenantDb) =>
       tenantDb.gbpProduct.findFirst({
         where: { id: productId, gbpProfileId: gbpId, gbpProfile: { clientId } },
-      })
+      }),
     );
 
     if (!product) {
@@ -155,7 +154,7 @@ export async function DELETE(
     await withClientTenant(clientId, (tenantDb) =>
       tenantDb.gbpProduct.delete({
         where: { id: productId },
-      })
+      }),
     );
 
     return new NextResponse(null, { status: 204 });

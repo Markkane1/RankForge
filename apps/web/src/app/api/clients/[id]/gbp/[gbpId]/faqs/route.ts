@@ -10,17 +10,26 @@ const createFaqSchema = z.object({
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string; gbpId: string } }
+  { params }: { params: { id: string; gbpId: string } },
 ) {
   try {
-    const auth = await requireClientRole(params.id, "OWNER", "COORDINATOR", "VIEWER", "APPROVER");
+    const auth = await requireClientRole(
+      params.id,
+      "OWNER",
+      "COORDINATOR",
+      "VIEWER",
+      "APPROVER",
+    );
     if (!auth.ok) return auth.response;
 
     const faqs = await withClientTenant(params.id, (tenantDb) =>
       tenantDb.gbpFaq.findMany({
-        where: { gbpProfileId: params.gbpId, gbpProfile: { clientId: params.id } },
+        where: {
+          gbpProfileId: params.gbpId,
+          gbpProfile: { clientId: params.id },
+        },
         orderBy: { createdAt: "desc" },
-      })
+      }),
     );
 
     return NextResponse.json(faqs);
@@ -32,7 +41,7 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string; gbpId: string } }
+  { params }: { params: { id: string; gbpId: string } },
 ) {
   try {
     const auth = await requireClientRole(params.id, "OWNER", "COORDINATOR");
@@ -41,7 +50,10 @@ export async function POST(
     const body = await request.json();
     const parsed = createFaqSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid input", details: parsed.error.format() }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid input", details: parsed.error.format() },
+        { status: 400 },
+      );
     }
 
     const faq = await withClientTenant(params.id, async (tenantDb) => {
@@ -63,12 +75,18 @@ export async function POST(
     });
 
     if (!faq) {
-      return NextResponse.json({ error: "GBP profile not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "GBP profile not found" },
+        { status: 404 },
+      );
     }
 
     return NextResponse.json(faq, { status: 201 });
   } catch (error) {
     console.error("POST GBP FAQ error:", error);
-    return NextResponse.json({ error: "Failed to create FAQ" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to create FAQ" },
+      { status: 500 },
+    );
   }
 }
